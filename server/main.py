@@ -3,6 +3,7 @@ from flask import Flask, render_template, request
 import sqlite3
 import hashlib
 
+from users import *
 from db import get_db
 
 app = Flask(__name__,
@@ -10,7 +11,7 @@ app = Flask(__name__,
             static_folder="static"
 )
 
-@app.route("/register",methods=['POST'])
+@app.route("/register",methods=["POST"])
 def register():
     if request.method != "POST":
         return {"error": "Method Not Allowed"}, 405 
@@ -21,25 +22,21 @@ def register():
     password=data.get("password")
     mail=data.get("mail")
 
-    # check if data exists
-    if username==None or mail==None or password==None:
-        return {"error": "Missing required fields: username, password, and mail are required"}, 400
+    return register_new_user_endpoint(username,mail,password)
 
-    hpassword=hashlib.sha256(password.encode()).hexdigest()
+@app.route("/login",methods=["GET"])
+def login():
+    if request.method!="GET":
+        return {"error": "Method Not Allowed"}, 405 
     
-    # check data in database
-    db=get_db()
-    o=db.execute("SELECT * FROM users WHERE Username = ? AND Password = ?", (username,hpassword))
-    user=o.fetchall()
-    if user:
-        return {"error": "User already exists!"}, 400
+    username = request.args.get('username',None)
+    password = request.args.get('password',None)
+    mail = request.args.get('mail',None)
 
-    db.execute("INSERT INTO users (Username, Password, Mail) VALUES (?, ?, ?)", (username, hpassword, mail))
-    db.commit()
-    
-    # we are good to go
-    return {"status": "Success"}, 200
-
+    if mail==None:
+        return check_login_endpoint_username(username,password)
+    else:
+        return check_login_endpoint_mail(mail,password)
 
 @app.route("/")
 def index():
