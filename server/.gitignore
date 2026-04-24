@@ -1,12 +1,2 @@
-server
-Crow
-static/openapi.yaml
-node_modules
-# json.hpp
-test
-bin
-.env
-test.cpp
-test_env
-*.obj
-vcpkg
+*.db
+__pycache__
