@@ -1,0 +1,7 @@
+check if the name/id is in the database.
+if not the functions are returning a null json
+this is not ok
+you should give an error status code not an null json
+please fix soon (not today, I am lasy)
+
+add try catch and the error.h and error.cpp implementations (the return values of all functions that return into the lambda functions must be of type Error<T> so we don't overbload them with try catches as well)
