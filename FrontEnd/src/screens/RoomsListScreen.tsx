@@ -1,64 +1,148 @@
 import React, { useState } from 'react';
-import { FlatList, View, StyleSheet } from 'react-native';
-import { Text, List, Button, FAB, Divider } from 'react-native-paper';
+import { FlatList, View, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, FAB, Surface } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from 'react-native-paper';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import ScreenWrapper from '../components/ScreenWrapper';
 import DeleteModal from '../components/DeleteModal';
 import { useRoomStore } from '../store/useRoomStore';
+import type { Room } from '../models/types';
 import type { RoomsStackParamList } from '../navigation/RoomsNavigator';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'RoomsList'>;
 
+// ─── Room row card ────────────────────────────────────────────────────────────
+
+interface RowProps {
+  room: Room;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+const RoomRow: React.FC<RowProps> = ({ room, onEdit, onDelete }) => {
+  const { colors } = useTheme();
+  const hasAnomalies  = room.analytics.anomalies.length > 0;
+  const accentColor   = hasAnomalies ? '#EF4444' : colors.primary;
+  const socketCount   = room.devices.filter((d) => d.type === 'smart_socket').length;
+  const sensorCount   = room.devices.filter((d) => d.type === 'temperature_sensor').length;
+  const latestTemp    = room.analytics.temperature.at(-1)?.value;
+  const latestEnergy  = room.analytics.energyUsage.at(-1)?.value;
+  const doorCount     = room.blueprint?.features.filter((f) => f.type === 'door').length ?? 0;
+  const windowCount   = room.blueprint?.features.filter((f) => f.type === 'window').length ?? 0;
+
+  return (
+    <Surface style={[styles.card, { backgroundColor: colors.surface }]} elevation={2}>
+      {/* Accent bar */}
+      <View style={[styles.accentBar, { backgroundColor: accentColor }]} />
+
+      <View style={styles.cardBody}>
+        {/* Top row */}
+        <View style={styles.cardHeader}>
+          <View style={[styles.roomIcon, { backgroundColor: accentColor + '18' }]}>
+            <MaterialCommunityIcons name="floor-plan" size={22} color={accentColor} />
+          </View>
+          <View style={styles.cardTitleGroup}>
+            <Text variant="titleMedium" style={{ fontWeight: '700', color: colors.onSurface }}>
+              {room.name}
+            </Text>
+            <Text variant="bodySmall" style={{ color: colors.outline }}>
+              {room.devices.length} device{room.devices.length !== 1 ? 's' : ''}
+              {hasAnomalies ? '  ·  ⚠ anomaly' : ''}
+            </Text>
+          </View>
+          {/* Action buttons */}
+          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.primaryContainer }]} onPress={onEdit}>
+            <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: '#FEF2F2' }]} onPress={onDelete}>
+            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Stat chips */}
+        <View style={styles.chipRow}>
+          {latestTemp != null && (
+            <View style={[styles.chip, { backgroundColor: colors.secondaryContainer }]}>
+              <MaterialCommunityIcons name="thermometer" size={12} color={colors.secondary} />
+              <Text variant="labelSmall" style={{ color: colors.secondary, marginLeft: 3 }}>{latestTemp}°C</Text>
+            </View>
+          )}
+          {latestEnergy != null && (
+            <View style={[styles.chip, { backgroundColor: '#FEF3C718' }]}>
+              <MaterialCommunityIcons name="flash" size={12} color="#F59E0B" />
+              <Text variant="labelSmall" style={{ color: '#F59E0B', marginLeft: 3 }}>{latestEnergy} W</Text>
+            </View>
+          )}
+          {socketCount > 0 && (
+            <View style={[styles.chip, { backgroundColor: colors.primaryContainer }]}>
+              <MaterialCommunityIcons name="power-socket" size={12} color={colors.primary} />
+              <Text variant="labelSmall" style={{ color: colors.primary, marginLeft: 3 }}>{socketCount}</Text>
+            </View>
+          )}
+          {sensorCount > 0 && (
+            <View style={[styles.chip, { backgroundColor: colors.secondaryContainer }]}>
+              <MaterialCommunityIcons name="thermometer" size={12} color={colors.secondary} />
+              <Text variant="labelSmall" style={{ color: colors.secondary, marginLeft: 3 }}>{sensorCount}</Text>
+            </View>
+          )}
+          {doorCount > 0 && (
+            <View style={[styles.chip, { backgroundColor: '#10B98118' }]}>
+              <MaterialCommunityIcons name="door" size={12} color="#10B981" />
+              <Text variant="labelSmall" style={{ color: '#10B981', marginLeft: 3 }}>{doorCount}</Text>
+            </View>
+          )}
+          {windowCount > 0 && (
+            <View style={[styles.chip, { backgroundColor: '#60A5FA18' }]}>
+              <MaterialCommunityIcons name="window-open-variant" size={12} color="#60A5FA" />
+              <Text variant="labelSmall" style={{ color: '#60A5FA', marginLeft: 3 }}>{windowCount}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Surface>
+  );
+};
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 const RoomsListScreen: React.FC<Props> = ({ navigation }) => {
   const { colors } = useTheme();
-  const rooms = useRoomStore((s) => s.rooms);
+  const rooms      = useRoomStore((s) => s.rooms);
   const deleteRoom = useRoomStore((s) => s.deleteRoom);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   return (
     <ScreenWrapper>
-      <Text variant="headlineMedium" style={styles.heading}>
-        Rooms
-      </Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text variant="headlineMedium" style={styles.heading}>Rooms</Text>
+          <Text variant="bodySmall" style={{ color: colors.outline }}>
+            {rooms.length} room{rooms.length !== 1 ? 's' : ''} configured
+          </Text>
+        </View>
+      </View>
+
       <FlatList
         data={rooms}
         keyExtractor={(r) => r.id}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <Divider />}
         ListEmptyComponent={() => (
-          <Text
-            variant="bodyMedium"
-            style={{ color: colors.outline, textAlign: 'center', marginTop: 40 }}
-          >
-            No rooms yet. Tap + to add one.
-          </Text>
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="home-plus-outline" size={64} color={colors.outline + '55'} />
+            <Text variant="titleMedium" style={{ color: colors.outline, marginTop: 16 }}>No rooms yet</Text>
+            <Text variant="bodySmall" style={{ color: colors.outline, textAlign: 'center', marginTop: 4 }}>
+              Tap the + button to design your first room.
+            </Text>
+          </View>
         )}
         renderItem={({ item }) => (
-          <List.Item
-            title={item.name}
-            description={`${item.devices.length} device${item.devices.length !== 1 ? 's' : ''}`}
-            left={(props) => <List.Icon {...props} icon="floor-plan" />}
-            right={() => (
-              <View style={styles.actions}>
-                <Button
-                  mode="text"
-                  compact
-                  onPress={() => navigation.navigate('RoomEditor', { roomId: item.id })}
-                >
-                  Edit
-                </Button>
-                <Button
-                  mode="text"
-                  compact
-                  textColor="#EF4444"
-                  onPress={() => setDeleteTarget({ id: item.id, name: item.name })}
-                >
-                  Delete
-                </Button>
-              </View>
-            )}
+          <RoomRow
+            room={item}
+            onEdit={() => navigation.navigate('RoomEditor', { roomId: item.id })}
+            onDelete={() => setDeleteTarget({ id: item.id, name: item.name })}
           />
         )}
       />
@@ -84,9 +168,21 @@ const RoomsListScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  heading: { padding: 16, fontWeight: '700' },
-  list: { paddingBottom: 80 },
-  actions: { flexDirection: 'row', alignItems: 'center' },
+  header:  { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  heading: { fontWeight: '700' },
+  list:    { paddingHorizontal: 16, paddingBottom: 100 },
+  emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 32 },
+  // Card
+  card:        { borderRadius: 20, marginBottom: 14, overflow: 'hidden' },
+  accentBar:   { height: 4 },
+  cardBody:    { padding: 14 },
+  cardHeader:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  roomIcon:    { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  cardTitleGroup: { flex: 1, gap: 2 },
+  iconBtn:     { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  chipRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  // FAB
   fab: { position: 'absolute', right: 16, bottom: 104 },
 });
 

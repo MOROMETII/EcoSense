@@ -1,13 +1,23 @@
 import React from 'react';
+import { View, ActivityIndicator } from 'react-native';
 
 import { useAuth } from '../context/AuthContext';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
 
-// Root navigator: renders the auth flow when the user is not logged in,
-// and the main tab navigator once they are authenticated.
+// Root navigator: shows a spinner while the stored session is being restored,
+// then renders the auth flow or main app depending on auth state.
 const AppNavigator: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return isAuthenticated ? <MainNavigator /> : <AuthNavigator />;
 };
 
