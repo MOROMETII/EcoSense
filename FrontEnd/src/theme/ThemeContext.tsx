@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { DarkTheme as NavDarkTheme, DefaultTheme as NavLightTheme } from '@react-navigation/native';
 import type { Theme as NavTheme } from '@react-navigation/native';
@@ -9,6 +9,7 @@ interface ThemeContextValue {
   theme: MD3Theme;
   navTheme: NavTheme;
   isDark: boolean;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -28,14 +29,18 @@ const buildNavTheme = (paperTheme: MD3Theme, base: NavTheme): NavTheme => ({
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Automatically follows the device's system light/dark setting.
   const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  // null = follow system; true/false = manual override
+  const [isDarkOverride, setIsDarkOverride] = useState<boolean | null>(null);
+
+  const isDark = isDarkOverride !== null ? isDarkOverride : colorScheme === 'dark';
   const paperTheme = isDark ? darkTheme : lightTheme;
   const navTheme = buildNavTheme(paperTheme, isDark ? NavDarkTheme : NavLightTheme);
 
+  const toggleTheme = () => setIsDarkOverride(!isDark);
+
   return (
-    <ThemeContext.Provider value={{ theme: paperTheme, navTheme, isDark }}>
+    <ThemeContext.Provider value={{ theme: paperTheme, navTheme, isDark, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

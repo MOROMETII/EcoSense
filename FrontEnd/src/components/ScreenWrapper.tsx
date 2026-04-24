@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
 import { useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface ScreenWrapperProps extends ViewProps {
   children: React.ReactNode;
@@ -10,9 +11,17 @@ interface ScreenWrapperProps extends ViewProps {
 // Automatically fills the background with the current Paper theme color.
 const ScreenWrapper: React.FC<ScreenWrapperProps> = ({ children, style, ...rest }) => {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.base, { backgroundColor: colors.background }, style]} {...rest}>
+    <View
+      style={[
+        styles.base,
+        { backgroundColor: colors.background, paddingTop: insets.top },
+        style,
+      ]}
+      {...rest}
+    >
       {children}
     </View>
   );
