@@ -1,28 +1,29 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecureBearSSL.h>
 #include <DHT.h>
+#include <time.h>
 
 // ---------------- WIFI ----------------
 const char* ssid = "Free Virus WiFi";
 const char* password = "1q2w3e4r5t";
 
-// ---------------- BACKEND (HTTP ONLY) ----------------
+// ---------------- BACKEND (HTTPS) ----------------
 const char* postUrl =
-"https://botryose-unshadily-wynell.ngrok-free.dev/data/thermostat";
+"https://vegetable-explosion-roles-kinase.trycloudflare.com/data/thermostat";
 
 const char* statusUrl =
-"https://botryose-unshadily-wynell.ngrok-free.dev/thermostat/1/status";
+"https://vegetable-explosion-roles-kinase.trycloudflare.com/thermostat/1/status";
 
 // ---------------- DHT ----------------
-#define DHTPIN D5
+#define DHTPIN 14
 #define DHTTYPE DHT11
 
 DHT dht(DHTPIN, DHTTYPE);
 
 // ---------------- LED ----------------
-#define LED_PIN D6
+#define LED_PIN 12
 
 bool deviceOnline = true;
 
@@ -56,10 +57,32 @@ void connectWiFi() {
     Serial.println("\nWiFi connected");
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
-
-    delay(1000); // stabilize network stack
+    delay(1000);
   } else {
     Serial.println("\nWiFi FAILED");
+  }
+}
+
+// ---------------- NTP TIME SYNC ----------------
+void syncTime() {
+
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+  Serial.print("Syncing time");
+
+  unsigned long start = millis();
+  time_t now = time(nullptr);
+
+  while (now < 8 * 3600 * 2 && millis() - start < 10000) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+
+  if (now < 8 * 3600 * 2) {
+    Serial.println("\nTime sync FAILED — continuing anyway");
+  } else {
+    Serial.println("\nTime synced: " + String(ctime(&now)));
   }
 }
 
@@ -77,10 +100,13 @@ void sendData() {
     return;
   }
 
-  WiFiClient client;
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 512);
+
   HTTPClient http;
 
-  http.setTimeout(5000);
+  http.setTimeout(15000);
   http.setReuse(false);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
@@ -90,7 +116,6 @@ void sendData() {
   }
 
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("ngrok-skip-browser-warning", "true");
 
   String json = "{";
   json += "\"thermostat_id\":1,";
@@ -103,8 +128,9 @@ void sendData() {
   Serial.print("POST code: ");
   Serial.println(code);
 
-  if (code == -1) {
-    Serial.println("POST failed (network issue)");
+  if (code < 0) {
+    Serial.print("POST error: ");
+    Serial.println(http.errorToString(code));
   }
 
   http.end();
@@ -115,10 +141,13 @@ void checkStatus() {
 
   if (WiFi.status() != WL_CONNECTED) return;
 
-  WiFiClient client;
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 512);
+
   HTTPClient http;
 
-  http.setTimeout(5000);
+  http.setTimeout(15000);
   http.setReuse(false);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
@@ -126,8 +155,6 @@ void checkStatus() {
     Serial.println("HTTP begin failed (GET)");
     return;
   }
-
-  http.addHeader("ngrok-skip-browser-warning", "true");
 
   int code = http.GET();
 
@@ -139,10 +166,11 @@ void checkStatus() {
     String payload = http.getString();
     Serial.println("Status: " + payload);
 
-    deviceOnline = (payload.indexOf("false") == -1);
+    deviceOnline = (payload.indexOf("0") == -1);
 
   } else {
-    Serial.println("GET failed");
+    Serial.print("GET error: ");
+    Serial.println(http.errorToString(code));
   }
 
   http.end();
@@ -159,6 +187,7 @@ void setup() {
   dht.begin();
 
   connectWiFi();
+  syncTime();
 }
 
 // ---------------- LOOP ----------------
@@ -168,6 +197,7 @@ void loop() {
 
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
+    syncTime();
     return;
   }
 
