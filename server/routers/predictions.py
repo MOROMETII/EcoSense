@@ -29,7 +29,7 @@ def get_cached_df():
     if _csv_dataframe is None:
         if not os.path.exists("test_data.csv"):
             raise FileNotFoundError("test_data.csv not found")
-        _csv_dataframe = pd.read_csv("test_data.csv", parse_dates=["timestamp"])
+        _csv_dataframe = pd.read_csv("../test_data.csv", parse_dates=["timestamp"])
     return _csv_dataframe
 
 def _get_features():
