@@ -6,7 +6,7 @@ import { useTheme } from 'react-native-paper';
 
 import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
-import { fetchSocketCurrentKwh, fetchRoomAnalytics, fetchSocketHistory } from '../services/socketPredictionService';
+import { fetchRoomBulkData } from '../services/socketPredictionService';
 import type { Room, Device, DataPoint } from '../models/types';
 
 interface Props {
