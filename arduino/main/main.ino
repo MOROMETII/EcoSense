@@ -1,142 +1,179 @@
+#include "DHT.h"
+#include <WiFiClientSecure.h>
 #include <Arduino.h>
+
 #include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>
+
 #include <ESP8266HTTPClient.h>
+
 #include <WiFiClient.h>
-#include <DHT.h>
 
-// ---------------- WIFI ----------------
-const char* ssid = "YOUR_WIFI";
-const char* password = "YOUR_PASSWORD";
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
-// ---------------- BACKEND ----------------
-const char* postUrl = "https://c615-109-166-136-76.ngrok-free.app/data/thermostat";
+#include <OneWire.h> 
+#include <DallasTemperature.h>
 
-// status endpoint with ID = 1
-String statusUrl = "https://c615-109-166-136-76.ngrok-free.app/thermostat/1/status";
+#define D0 16
+#define D1 5
+#define D2 4
+#define D3 0
+#define D4 2
+#define D5 14
+#define D6 12
+#define D7 13
+#define D8 15
+#define D9 3
+#define RX 3
+#define D10 1
+#define TX 1
+#define D11 9
+#define SD2 9
+#define D12 10
+#define SD3 10
 
-// ---------------- DHT ----------------
-#define DHTPIN D5
+#define LED_R   D6
+#define LED_G   D7
+#define LED_B   D8
+
+#define WIFI_ADDR "Free Virus WiFi"
+#define WIFI_PASS "1q2w3e4r5t"
+
+#define ONE_WIRE_BUS D5         
+OneWire oneWire(ONE_WIRE_BUS); 
+DallasTemperature sensors(&oneWire);
+int deviceCount;
+
+String newHostname = "BlackBox2";
+
+ESP8266WiFiMulti WiFiMulti;
+static uint32_t timer;
+
+#define DHTPIN 2 // D4
 #define DHTTYPE DHT11
 
 DHT dht(DHTPIN, DHTTYPE);
 
-// ---------------- LED ----------------
-#define LED_PIN D6
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);   // D4 ?????
+  
+  pinMode(LED_R, OUTPUT); 
+  pinMode(LED_G, OUTPUT); 
+  pinMode(LED_B, OUTPUT); 
+  digitalWrite(LED_R, LOW);   
+  digitalWrite(LED_G, LOW);   
+  digitalWrite(LED_B, LOW);   
 
-bool deviceOnline = true;
+  digitalWrite(LED_BUILTIN, HIGH);
 
-// ---------------- TIMING ----------------
-unsigned long lastSend = 0;
-unsigned long lastCheck = 0;
+  Serial.begin(9600);
+  Serial.println(F("DHT11 test"));
+  dht.begin();
 
-const unsigned long sendInterval = 15000;
-const unsigned long checkInterval = 5000;
+  Serial.println();
+  Serial.println();
+  Serial.println();
 
-// ---------------- WIFI ----------------
-void connectWiFi() {
-  WiFi.begin(ssid, password);
 
-  Serial.print("Connecting");
+  
+  for (uint8_t t = 5; t > 0; t--) {
+    Serial.printf("[SETUP] WAIT %d...\n", t);
+    Serial.flush();
+  }
 
-  while (WiFi.status() != WL_CONNECTED) {
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname(newHostname.c_str());
+
+  for(int i=6;--i;)WiFiMulti.addAP(WIFI_ADDR, WIFI_PASS);
+  sensors.begin(); 
+
+  Serial.print("Merge");
+
+  // locate devices on the bus
+  Serial.print("Locating devices...");
+  Serial.print("Found ");
+  deviceCount = sensors.getDeviceCount();
+  Serial.print(deviceCount, DEC);
+  Serial.println(" devices.");
+  Serial.println("");
+
+  delay(1000);
+  
+  timer = millis() + 5000;
+
+  while (WiFiMulti.run() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
 
   Serial.println("\nConnected!");
+  Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
 }
 
-// ---------------- SEND SENSOR DATA ----------------
-void sendData() {
-
-  if (!deviceOnline) return; // STOP SENDING IF OFFLINE
-
-  float temp = dht.readTemperature();
-  float hum  = dht.readHumidity();
-
-  if (isnan(temp) || isnan(hum)) {
-    Serial.println("DHT failed");
-    return;
-  }
-
-  WiFiClient client;
-  HTTPClient http;
-
-  http.begin(client, postUrl);
-  http.addHeader("Content-Type", "application/json");
-
-  String json =
-    "{"
-    "\"thermostat_id\":1,"
-    "\"temp_ambient\":" + String(temp, 2) + ","
-    "\"humidity\":" + String(hum, 2) +
-    "}";
-
-  int code = http.POST(json);
-
-  Serial.print("POST: ");
-  Serial.println(code);
-
-  http.end();
-}
-
-// ---------------- CHECK STATUS ----------------
-void checkStatus() {
-
-  WiFiClient client;
-  HTTPClient http;
-
-  http.begin(client, statusUrl);
-
-  int code = http.GET();
-
-  if (code == 200) {
-
-    String payload = http.getString();
-    Serial.print("Status: ");
-    Serial.println(payload);
-
-    // SIMPLE PARSING
-    if (payload.indexOf("false") != -1) {
-      deviceOnline = false;
-    } else {
-      deviceOnline = true;
-    }
-
-  }
-
-  http.end();
-}
-
-// ---------------- SETUP ----------------
-void setup() {
-
-  Serial.begin(115200);
-
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);
-
-  dht.begin();
-
-  connectWiFi();
-}
-
-// ---------------- LOOP ----------------
 void loop() {
+  Serial.print(".");
+  if(millis() + 1000000 < timer)
+		timer = millis() + 1000;
 
-  // LED reflects online state
-  digitalWrite(LED_PIN, deviceOnline ? HIGH : LOW);
+	if(millis() < timer){
+      digitalWrite(LED_BUILTIN, LOW);   
+      delay(50);
+      digitalWrite(LED_BUILTIN, HIGH);   
+      delay(250);
 
-  // check backend status every 5 sec
-  if (millis() - lastCheck >= checkInterval) {
-    lastCheck = millis();
-    checkStatus();
+		  return;
+	}
+		
+	timer = millis() + 20000;
+  digitalWrite(LED_BUILTIN, LOW);   
+  // String params = getTemperatures();
+  digitalWrite(LED_BUILTIN, HIGH); 
+  // In your loop() function, add headers before making the request
+if ((WiFiMulti.run() == WL_CONNECTED)) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    
+    yield();
+    
+    String url = "https://remote-juan-flex-grow.trycloudflare.com/thermostat/1/status";
+    
+    if (http.begin(client, url)) {
+        // ADD THESE HEADERS to bypass the warning page
+        http.addHeader("ngrok-skip-browser-warning", "1");
+        // Or alternatively, spoof a browser User-Agent:
+        // http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        
+        yield();
+        Serial.print("[HTTP] GET ...\n");
+        
+        int httpCode = http.GET();
+        
+        if (httpCode > 0) {
+            Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+            
+            if (httpCode == HTTP_CODE_OK) {
+                String payload = http.getString();
+                yield();
+                Serial.println(payload.substring(0, 100));
+            }
+        } else {
+            Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+        }
+        http.end();
+    }
   }
-
-  // send data every 15 sec (only if online)
-  if (millis() - lastSend >= sendInterval) {
-    lastSend = millis();
-    sendData();
+}
+void printAddress(DeviceAddress deviceAddress)
+{
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    // zero pad the address if necessary
+    if (deviceAddress[i] < 16) Serial.print("0");
+    Serial.print(deviceAddress[i], HEX);
   }
 }
