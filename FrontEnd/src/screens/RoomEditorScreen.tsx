@@ -317,8 +317,13 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
       Alert.alert('Limit Reached', 'Only 1 temperature sensor is allowed per room.');
       return;
     }
+    const socketIndex = devices.filter((d) => d.type === 'smart_socket').length + 1;
+    const newId =
+      selectedDeviceType === 'smart_socket'
+        ? `SKT_${String(socketIndex).padStart(2, '0')}`
+        : `d_${Date.now()}`;
     const newDevice: Device = {
-      id: `d_${Date.now()}`,
+      id: newId,
       type: selectedDeviceType,
       position: { x, y },
       ...(selectedDeviceType === 'smart_socket' ? { energyUsage: 0 } : { temperature: 0 }),

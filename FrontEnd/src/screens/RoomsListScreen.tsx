@@ -7,9 +7,16 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import ScreenWrapper from '../components/ScreenWrapper';
 import DeleteModal from '../components/DeleteModal';
+import BlueprintBackground from '../components/BlueprintBackground';
 import { useRoomStore } from '../store/useRoomStore';
 import type { Room } from '../models/types';
-import type { RoomsStackParamList } from '../navigation/RoomsNavigator';
+
+const GRID_SIZE = 12;
+
+type RoomsStackParamList = {
+  RoomsList: undefined;
+  RoomEditor: { roomId: string | undefined };
+};
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'RoomsList'>;
 
@@ -22,6 +29,7 @@ interface RowProps {
 }
 
 const RoomRow: React.FC<RowProps> = ({ room, onEdit, onDelete }) => {
+  const [expanded, setExpanded] = useState(false);
   const { colors } = useTheme();
   const hasAnomalies  = room.analytics.anomalies.length > 0;
   const accentColor   = hasAnomalies ? '#EF4444' : colors.primary;
@@ -37,6 +45,7 @@ const RoomRow: React.FC<RowProps> = ({ room, onEdit, onDelete }) => {
       {/* Accent bar */}
       <View style={[styles.accentBar, { backgroundColor: accentColor }]} />
 
+      <TouchableOpacity activeOpacity={0.8} onPress={() => setExpanded((e) => !e)}>
       <View style={styles.cardBody}>
         {/* Top row */}
         <View style={styles.cardHeader}>
@@ -100,7 +109,44 @@ const RoomRow: React.FC<RowProps> = ({ room, onEdit, onDelete }) => {
             </View>
           )}
         </View>
+
+        <MaterialCommunityIcons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={colors.outline}
+          style={{ alignSelf: 'center', marginTop: 4 }}
+        />
       </View>
+      </TouchableOpacity>
+
+      {/* Expanded map */}
+      {expanded && room.blueprint && (
+        <View style={[styles.mapWrapper, { marginHorizontal: 14, marginBottom: 14 }]}>
+          <BlueprintBackground blueprint={room.blueprint} />
+          {room.devices.map((device) => (
+            <View
+              key={device.id}
+              style={[
+                styles.deviceDot,
+                {
+                  left: `${((device.position.x + 0.5) / GRID_SIZE) * 100}%` as any,
+                  top:  `${((device.position.y + 0.5) / GRID_SIZE) * 100}%` as any,
+                  backgroundColor:
+                    device.type === 'temperature_sensor'
+                      ? colors.secondaryContainer
+                      : colors.primaryContainer,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={device.type === 'temperature_sensor' ? 'thermometer' : 'power-socket'}
+                size={10}
+                color={device.type === 'temperature_sensor' ? colors.secondary : colors.primary}
+              />
+            </View>
+          ))}
+        </View>
+      )}
     </Surface>
   );
 };
@@ -182,6 +228,22 @@ const styles = StyleSheet.create({
   iconBtn:     { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   chipRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  // Map preview
+  mapWrapper: {
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 0,
+  },
+  deviceDot: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateX: -9 }, { translateY: -9 }],
+  },
   // FAB
   fab: { position: 'absolute', right: 16, bottom: 104 },
 });

@@ -15,8 +15,8 @@ const MOCK_ROOMS: Room[] = [
     name: 'Office A',
     devices: [
       { id: 'd1', type: 'temperature_sensor', position: { x: 2, y: 3 }, temperature: 22.5 },
-      { id: 'd2', type: 'smart_socket', position: { x: 5, y: 1 }, energyUsage: 120 },
-      { id: 'd3', type: 'smart_socket', position: { x: 6, y: 5 }, energyUsage: 340 },
+      { id: 'SKT_01', type: 'smart_socket', position: { x: 5, y: 1 }, energyUsage: 120 },
+      { id: 'SKT_02', type: 'smart_socket', position: { x: 6, y: 5 }, energyUsage: 340 },
     ],
     blueprint: {
       features: [
@@ -37,7 +37,7 @@ const MOCK_ROOMS: Room[] = [
     name: 'Meeting Room',
     devices: [
       { id: 'd4', type: 'temperature_sensor', position: { x: 3, y: 4 }, temperature: 19.2 },
-      { id: 'd5', type: 'smart_socket', position: { x: 1, y: 2 }, energyUsage: 80 },
+      { id: 'SKT_01', type: 'smart_socket', position: { x: 1, y: 2 }, energyUsage: 80 },
     ],
     blueprint: {
       features: [

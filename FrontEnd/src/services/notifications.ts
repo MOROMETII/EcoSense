@@ -61,9 +61,11 @@ export async function registerForPushNotifications(username: string): Promise<vo
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
     const token = tokenData.data;
-    const deviceName = Device.deviceName ?? 'Unknown Device';
+    const rawName = Device.deviceName;
+    const deviceName = (rawName && rawName.toLowerCase() !== 'none')
+      ? rawName
+      : (Device.modelName ?? 'Unknown Device');
     const payload = { "token":token, "deviceName":deviceName, "username":username };
-
     const res = await fetch(`${BASE_URL}/register-token`, {
       method: 'POST',
       headers: {

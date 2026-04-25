@@ -60,3 +60,28 @@ export async function registerApi(username: string, password: string, email: str
     return { ok: false, message: 'Server is unreachable. Please try again later.' };
   }
 }
+
+
+
+export async function logoutApi(username: string, deviceName: string, token: string): Promise<ApiResult> {
+  const { controller, clear } = makeController();
+  const payload = { "username":username, "deviceName":deviceName, "token":token };
+  try {
+    const res = await fetch(`${BASE_URL}/logout`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify(payload),
+    });
+    clear();
+    if (res.status === 200) return { ok: true };
+    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    return { ok: false, message: String(body.error ?? `Server error (${res.status})`) };
+  } catch (e: unknown) {
+    clear();
+    if (e instanceof Error && e.name === 'AbortError') {
+      return { ok: false, message: 'Request timed out. Check your connection and try again.' };
+    }
+    return { ok: false, message: 'Server is unreachable. Please try again later.' };
+  }
+}
