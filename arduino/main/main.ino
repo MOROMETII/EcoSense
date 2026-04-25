@@ -6,81 +6,28 @@
 #include <ESP8266WiFiMulti.h>
 
 #include <ESP8266HTTPClient.h>
+#include <WiFiClientSecureBearSSL.h>
+#include <DHT.h>
+#include <time.h>
 
-#include <WiFiClient.h>
+// ---------------- WIFI ----------------
+const char* ssid = "Free Virus WiFi";
+const char* password = "1q2w3e4r5t";
 
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+// ---------------- BACKEND (HTTPS) ----------------
+const char* postUrl =
+"https://vegetable-explosion-roles-kinase.trycloudflare.com/data/thermostat";
 
-#include <OneWire.h> 
-#include <DallasTemperature.h>
+const char* statusUrl =
+"https://vegetable-explosion-roles-kinase.trycloudflare.com/thermostat/1/status";
 
-#define D0 16
-#define D1 5
-#define D2 4
-#define D3 0
-#define D4 2
-#define D5 14
-#define D6 12
-#define D7 13
-#define D8 15
-#define D9 3
-#define RX 3
-#define D10 1
-#define TX 1
-#define D11 9
-#define SD2 9
-#define D12 10
-#define SD3 10
-
-#define LED_R   D6
-#define LED_G   D7
-#define LED_B   D8
-
-#define WIFI_ADDR "Free Virus WiFi"
-#define WIFI_PASS "1q2w3e4r5t"
-
-#define ONE_WIRE_BUS D5         
-OneWire oneWire(ONE_WIRE_BUS); 
-DallasTemperature sensors(&oneWire);
-int deviceCount;
-
-String newHostname = "BlackBox2";
-
-ESP8266WiFiMulti WiFiMulti;
-static uint32_t timer;
-
-#define DHTPIN 2 // D4
+// ---------------- DHT ----------------
+#define DHTPIN 14
 #define DHTTYPE DHT11
 
-DHT dht(DHTPIN, DHTTYPE);
 
-void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);   // D4 ?????
-  
-  pinMode(LED_R, OUTPUT); 
-  pinMode(LED_G, OUTPUT); 
-  pinMode(LED_B, OUTPUT); 
-  digitalWrite(LED_R, LOW);   
-  digitalWrite(LED_G, LOW);   
-  digitalWrite(LED_B, LOW);   
-
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  Serial.begin(9600);
-  Serial.println(F("DHT11 test"));
-  dht.begin();
-
-  Serial.println();
-  Serial.println();
-  Serial.println();
-
-
-  
-  for (uint8_t t = 5; t > 0; t--) {
-    Serial.printf("[SETUP] WAIT %d...\n", t);
-    Serial.flush();
-  }
+// ---------------- LED ----------------
+#define LED_PIN 12
 
   WiFi.mode(WIFI_STA);
   WiFi.hostname(newHostname.c_str());
@@ -90,90 +37,180 @@ void setup() {
 
   Serial.print("Merge");
 
-  // locate devices on the bus
-  Serial.print("Locating devices...");
-  Serial.print("Found ");
-  deviceCount = sensors.getDeviceCount();
-  Serial.print(deviceCount, DEC);
-  Serial.println(" devices.");
-  Serial.println("");
+// ---------------- WIFI ----------------
+void connectWiFi() {
 
+  Serial.println("\nConnecting WiFi...");
+
+  WiFi.persistent(false);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
   delay(1000);
-  
-  timer = millis() + 5000;
 
-  while (WiFiMulti.run() != WL_CONNECTED) {
+  WiFi.begin(ssid, password);
+
+  unsigned long start = millis();
+
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
     delay(500);
     Serial.print(".");
   }
 
-  Serial.println("\nConnected!");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
-}
-
-void loop() {
-  Serial.print(".");
-  if(millis() + 1000000 < timer)
-		timer = millis() + 1000;
-
-	if(millis() < timer){
-      digitalWrite(LED_BUILTIN, LOW);   
-      delay(50);
-      digitalWrite(LED_BUILTIN, HIGH);   
-      delay(250);
-
-		  return;
-	}
-		
-	timer = millis() + 20000;
-  digitalWrite(LED_BUILTIN, LOW);   
-  // String params = getTemperatures();
-  digitalWrite(LED_BUILTIN, HIGH); 
-  // In your loop() function, add headers before making the request
-if ((WiFiMulti.run() == WL_CONNECTED)) {
-    WiFiClientSecure client;
-    client.setInsecure();
-    HTTPClient http;
-    
-    yield();
-    
-    String url = "https://remote-juan-flex-grow.trycloudflare.com/thermostat/1/status";
-    
-    if (http.begin(client, url)) {
-        // ADD THESE HEADERS to bypass the warning page
-        http.addHeader("ngrok-skip-browser-warning", "1");
-        // Or alternatively, spoof a browser User-Agent:
-        // http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        
-        yield();
-        Serial.print("[HTTP] GET ...\n");
-        
-        int httpCode = http.GET();
-        
-        if (httpCode > 0) {
-            Serial.printf("[HTTP] GET... code: %d\n", httpCode);
-            
-            if (httpCode == HTTP_CODE_OK) {
-                String payload = http.getString();
-                yield();
-                Serial.println(payload.substring(0, 100));
-            }
-        } else {
-            Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-        }
-        http.end();
-    }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    delay(1000);
+  } else {
+    Serial.println("\nWiFi FAILED");
   }
 }
-void printAddress(DeviceAddress deviceAddress)
-{
-  for (uint8_t i = 0; i < 8; i++)
-  {
-    // zero pad the address if necessary
-    if (deviceAddress[i] < 16) Serial.print("0");
-    Serial.print(deviceAddress[i], HEX);
+
+// ---------------- NTP TIME SYNC ----------------
+void syncTime() {
+
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+  Serial.print("Syncing time");
+
+  unsigned long start = millis();
+  time_t now = time(nullptr);
+
+  while (now < 8 * 3600 * 2 && millis() - start < 10000) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+
+  if (now < 8 * 3600 * 2) {
+    Serial.println("\nTime sync FAILED — continuing anyway");
+  } else {
+    Serial.println("\nTime synced: " + String(ctime(&now)));
+  }
+}
+
+// ---------------- SEND SENSOR DATA ----------------
+void sendData() {
+
+  if (!deviceOnline) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  float temp = dht.readTemperature();
+  float hum  = dht.readHumidity();
+
+  if (isnan(temp) || isnan(hum)) {
+    Serial.println("DHT failed");
+    return;
+  }
+
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 512);
+
+  HTTPClient http;
+
+  http.setTimeout(15000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  if (!http.begin(client, postUrl)) {
+    Serial.println("HTTP begin failed (POST)");
+    return;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+
+  String json = "{";
+  json += "\"thermostat_id\":1,";
+  json += "\"temp_ambient\":" + String(temp, 2) + ",";
+  json += "\"humidity\":" + String(hum, 2);
+  json += "}";
+
+  int code = http.POST(json);
+
+  Serial.print("POST code: ");
+  Serial.println(code);
+
+  if (code < 0) {
+    Serial.print("POST error: ");
+    Serial.println(http.errorToString(code));
+  }
+
+  http.end();
+}
+
+// ---------------- CHECK STATUS ----------------
+void checkStatus() {
+
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 512);
+
+  HTTPClient http;
+
+  http.setTimeout(15000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  if (!http.begin(client, statusUrl)) {
+    Serial.println("HTTP begin failed (GET)");
+    return;
+  }
+
+  int code = http.GET();
+
+  Serial.print("GET code: ");
+  Serial.println(code);
+
+  if (code == 200) {
+
+    String payload = http.getString();
+    Serial.println("Status: " + payload);
+
+    deviceOnline = (payload.indexOf("0") == -1);
+
+  } else {
+    Serial.print("GET error: ");
+    Serial.println(http.errorToString(code));
+  }
+
+  http.end();
+}
+
+// ---------------- SETUP ----------------
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);
+
+  dht.begin();
+
+  connectWiFi();
+  syncTime();
+}
+
+// ---------------- LOOP ----------------
+void loop() {
+
+  digitalWrite(LED_PIN, deviceOnline ? HIGH : LOW);
+
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+    syncTime();
+    return;
+  }
+
+  if (millis() - lastCheck >= checkInterval) {
+    lastCheck = millis();
+    checkStatus();
+  }
+
+  if (millis() - lastSend >= sendInterval) {
+    lastSend = millis();
+    sendData();
   }
 }
