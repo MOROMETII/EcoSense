@@ -283,6 +283,117 @@ def send():
         send_push(token, "Hello", "Test notification")
     return {"status": "sent"}
 
+@app.route("/predict/realtime", methods=["GET"])
+def predict_realtime():
+    """
+    GET /predict/realtime?loop=true&room_id=ROOM_101&socket_id=SKT_01
+    
+    Streams real-time predictions from test_data.csv in an infinite loop.
+    Each request gets the next batch of data for the specified socket.
+    
+    Query params:
+    - room_id (optional): Filter by room_id
+    - socket_id (optional): Filter by socket_id
+    - loop (optional): If 'true', wraps around to beginning when EOF is reached
+    
+    Returns: JSON array of predictions with current kWh, label, insight, confidence
+    """
+    if not hasattr(predict_realtime, '_csv_data'):
+        # Load CSV on first call
+        if not os.path.exists("test_data.csv"):
+            return jsonify({"error": "test_data.csv not found"}), 404
+        predict_realtime._csv_data = pd.read_csv("test_data.csv", parse_dates=["timestamp"])
+        predict_realtime._row_index = 0
+    
+    df = predict_realtime._csv_data
+    room_id = request.args.get("room_id")
+    socket_id = request.args.get("socket_id")
+    loop = request.args.get("loop", "false").lower() == "true"
+    
+    # Filter by room_id and/or socket_id
+    filtered_df = df.copy()
+    if room_id:
+        filtered_df = filtered_df[filtered_df["room_id"] == room_id]
+    if socket_id:
+        filtered_df = filtered_df[filtered_df["socket_id"] == socket_id]
+    
+    if filtered_df.empty:
+        return jsonify({"error": "No matching data found"}), 404
+    
+    # Get batch of rows (e.g., next 12 rows for sequence)
+    seq_len = _cache["cfg"]["seq_len"]
+    start_idx = predict_realtime._row_index % len(filtered_df) if loop else predict_realtime._row_index
+    end_idx = min(start_idx + seq_len, len(filtered_df))
+    
+    batch = filtered_df.iloc[start_idx:end_idx].copy()
+    predict_realtime._row_index = (end_idx % len(filtered_df)) if loop else end_idx
+    
+    # Run predictions on batch
+    result_df = predict_dataframe(batch)
+    
+    # Format response
+    records = _predictions_to_records(result_df)
+    return jsonify({
+        "count": len(records),
+        "records": records,
+        "next_index": predict_realtime._row_index,
+        "total_rows": len(filtered_df)
+    }), 200
+
+
+@app.route("/socket-history/<socket_id>", methods=["GET"])
+def get_socket_history(socket_id):
+    """
+    GET /socket-history/SKT_01?room_id=ROOM_101&hours=24
+    
+    Returns the prediction history for a specific socket from test_data.csv.
+    Includes kWh consumption, predictions, and insights.
+    
+    Query params:
+    - room_id (optional): Filter by room_id
+    - hours (optional): Limit to last N hours (default: 24)
+    """
+    if not os.path.exists("test_data.csv"):
+        return jsonify({"error": "test_data.csv not found"}), 404
+    
+    df = pd.read_csv("test_data.csv", parse_dates=["timestamp"])
+    
+    # Filter by socket_id
+    socket_df = df[df["socket_id"] == socket_id].copy()
+    
+    if socket_df.empty:
+        return jsonify({"error": f"No data found for socket {socket_id}"}), 404
+    
+    # Optional: filter by room_id
+    room_id = request.args.get("room_id")
+    if room_id:
+        socket_df = socket_df[socket_df["room_id"] == room_id]
+    
+    if socket_df.empty:
+        return jsonify({"error": f"No data found for socket {socket_id} in room {room_id}"}), 404
+    
+    # Sort by timestamp
+    socket_df = socket_df.sort_values("timestamp")
+    
+    # Get predictions
+    result_df = predict_dataframe(socket_df)
+    
+    # Get latest values
+    latest = result_df.iloc[-1]
+    history = _predictions_to_records(result_df)
+    
+    return jsonify({
+        "socket_id": socket_id,
+        "room_id": latest.get("room_id", "unknown"),
+        "current_kwh": float(latest["kwh"]),
+        "predicted_label": latest.get("predicted_label_name", "unknown"),
+        "confidence": float(latest.get("confidence", 0)),
+        "insight": latest.get("insight", ""),
+        "history_count": len(history),
+        "history": history[-12:],  # Last 12 records
+    }), 200
+
+
 @app.route("/logout",methods=["GET","POST"])
 def logout():
     return {"status":"iesi afara frate"},200
