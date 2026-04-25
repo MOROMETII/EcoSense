@@ -38,9 +38,11 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
     ? energyData.map((d) => d.value)
     : room.analytics.energyUsage.map((d) => d.value);
 
-  const latestTemp = tempData.length > 0
-    ? tempData.at(-1)?.value ?? '—'
-    : room.analytics.temperature.at(-1)?.value ?? '—';
+
+  const latestTempRaw = tempData.length > 0
+    ? tempData.at(-1)?.value
+    : room.analytics.temperature.at(-1)?.value;
+  const latestTemp = latestTempRaw != null ? Number(latestTempRaw).toFixed(2) : '—';
 
   const sockets = room.devices.filter((d) => d.type === 'smart_socket');
   const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
@@ -93,6 +95,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
       });
 
     } catch (err) {
+      // Silent catch
     }
   }, [room.id]);
 
@@ -105,10 +108,8 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, [loadData, pollRealtime, refreshKey]);
-  useEffect(() => {
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
-  }, [loadData]);
+
+  // REMOVED: The 30-second static loadData interval that was wiping out your realtime cursor.
 
   const handleSocketPress = (socket: Device) => {
     setSelectedSocket(socket);
@@ -175,7 +176,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
             <View style={styles.expanded}>
               <View style={[styles.divider, { backgroundColor: colors.outline + '22' }]} />
 
-              {/* Sparklines — now backed by live CSV data */}
+              {/* Sparklines */}
               <View style={styles.chartRow}>
                 <View style={styles.chartBlock}>
                   <Text variant="labelSmall" style={{ color: colors.outline, letterSpacing: 0.6 }}>
