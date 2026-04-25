@@ -133,12 +133,11 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
                                 </Text>
                             </View>
                             <View style={styles.kwhDisplay}>
-                                <Text variant="displayLarge" style={{ fontWeight: '700', color: colors.primary }}>
-                                    {prediction.current_kwh.toFixed(3)}
+                                <Text variant="displaySmall" style={{ fontWeight: 'bold' }}>
+                                    {/* Use optional chaining and a fallback to prevent crashes */}
+                                    {(prediction?.current_kwh ?? 0).toFixed(3)}
                                 </Text>
-                                <Text variant="titleSmall" style={{ color: colors.outline, marginTop: 4 }}>
-                                    kWh
-                                </Text>
+
                             </View>
                         </Surface>
 
@@ -243,7 +242,7 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
                                                     variant="bodySmall"
                                                     style={{ color: colors.onSurface, fontWeight: '500', marginTop: 2 }}
                                                 >
-                                                    {record.kwh.toFixed(3)} kWh
+                                                    {record.kwh.toFixed(3) ?? 0} kWh
                                                 </Text>
                                             </View>
                                             <Chip

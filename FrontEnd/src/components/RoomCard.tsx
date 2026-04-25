@@ -29,32 +29,29 @@ const RoomCard: React.FC<Props> = ({ room }) => {
   const hasAnomalies = room.analytics.anomalies.length > 0;
   const accentColor = hasAnomalies ? ANOMALY_COLOR : colors.primary;
 
-  // Use real temperature/energy data if available, fall back to mock
+
   const tempValues = tempData.length > 0 ? tempData.map((d) => d.value) : room.analytics.temperature.map((d) => d.value);
   const energyValues = energyData.length > 0 ? energyData.map((d) => d.value) : room.analytics.energyUsage.map((d) => d.value);
 
   const latestTemp = tempData.length > 0 ? tempData.at(-1)?.value ?? '—' : room.analytics.temperature.at(-1)?.value ?? '—';
   const sockets = room.devices.filter((d) => d.type === 'smart_socket');
 
-  // Calculate total energy from real kWh data
-  const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
-  const latestEnergy = loadingKwh ? '...' : (totalKwh * 1000).toFixed(0); // Convert kWh to W for display
 
-  // Consolidated fetch logic
+  const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
+  const latestEnergy = loadingKwh ? '...' : (totalKwh * 1000).toFixed(0);
+
   useEffect(() => {
     const loadData = async () => {
       setLoadingKwh(true);
       try {
         const data = await fetchRoomBulkData(room.id);
 
-        // 1. Update individual kWh values
         const kwhMap: Record<string, number> = {};
         data.sockets.forEach((s: any) => {
           kwhMap[s.socket_id] = s.kwh;
         });
         setSocketKwhMap(kwhMap);
 
-        // 2. Update Charts
         setTempData(data.temp_history.map((h: any) => ({
           timestamp: new Date(h.timestamp).getTime(),
           value: h.temp_ambient
@@ -62,7 +59,7 @@ const RoomCard: React.FC<Props> = ({ room }) => {
 
         setEnergyData(data.energy_history.map((h: any) => ({
           timestamp: new Date(h.timestamp).getTime(),
-          value: h.kwh * 1000 // Convert to Watts
+          value: h.kwh * 1000
         })));
 
       } catch (error) {
@@ -73,7 +70,7 @@ const RoomCard: React.FC<Props> = ({ room }) => {
     };
 
     loadData();
-    const interval = setInterval(loadData, 30000); // Poll every 30s
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, [room.id]);
 
@@ -81,8 +78,6 @@ const RoomCard: React.FC<Props> = ({ room }) => {
     setSelectedSocket(socket);
     setModalVisible(true);
   };
-
-  // Get kWh for a specific socket, fallback to 0 if not loaded
   const getSocketKwh = (socketId: string) => {
     return socketKwhMap[socketId] ?? 0;
   };

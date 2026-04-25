@@ -1,12 +1,7 @@
 import type { SocketPrediction } from "../models/types";
 
-// Configure this based on your server URL
 const SERVER_URL = "https://botryose-unshadily-wynell.ngrok-free.dev";
 
-/**
- * Fetch real-time socket predictions from the server.
- * The server loops through test_data.csv and returns predictions.
- */
 export const fetchSocketPrediction = async (
   socketId: string,
   roomId?: string,
@@ -49,10 +44,6 @@ export const fetchSocketPrediction = async (
   }
 };
 
-/**
- * Fetch complete history for a socket over 24 hours (or custom range).
- * Returns the last 12 records and full stats.
- */
 export const fetchSocketHistory = async (
   socketId: string,
   roomId?: string,
