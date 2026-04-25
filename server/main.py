@@ -19,6 +19,17 @@ app = Flask(__name__,
 
 _cache = _load_artifacts()
 
+
+_csv_dataframe = None
+
+def get_cached_df():
+    global _csv_dataframe
+    if _csv_dataframe is None:
+        if not os.path.exists("test_data.csv"):
+            raise FileNotFoundError("test_data.csv not found")
+        _csv_dataframe = pd.read_csv("test_data.csv", parse_dates=["timestamp"])
+    return _csv_dataframe
+
 def _get_features():
     return _cache['cfg']['features']
 
@@ -346,28 +357,16 @@ def predict_realtime():
 
 @app.route("/socket-history/<socket_id>", methods=["GET"])
 def get_socket_history(socket_id):
-    """
-    GET /socket-history/SKT_01?room_id=ROOM_101&hours=24
+    try:
+        df = get_cached_df()
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     
-    Returns the prediction history for a specific socket from test_data.csv.
-    Includes kWh consumption, predictions, and insights.
-    
-    Query params:
-    - room_id (optional): Filter by room_id
-    - hours (optional): Limit to last N hours (default: 24)
-    """
-    if not os.path.exists("test_data.csv"):
-        return jsonify({"error": "test_data.csv not found"}), 404
-    
-    df = pd.read_csv("test_data.csv", parse_dates=["timestamp"])
-    
-    # Filter by socket_id
     socket_df = df[df["socket_id"] == socket_id].copy()
     
     if socket_df.empty:
         return jsonify({"error": f"No data found for socket {socket_id}"}), 404
     
-    # Optional: filter by room_id
     room_id = request.args.get("room_id")
     if room_id:
         socket_df = socket_df[socket_df["room_id"] == room_id]
@@ -393,8 +392,40 @@ def get_socket_history(socket_id):
         "confidence": float(latest.get("confidence", 0)),
         "insight": latest.get("insight", ""),
         "history_count": len(history),
-        "history": history[-12:],  # Last 12 records
+        "history": history[-12:], 
     }), 200
+
+
+# main.py
+
+@app.route("/room-data/<room_id>", methods=["GET"])
+def get_room_data(room_id):
+    try:
+        df = get_cached_df()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+    room_df = df[df["room_id"] == room_id].copy()
+    if room_df.empty:
+        return jsonify({"error": "No data found for this room"}), 404
+
+    latest_per_socket = room_df.sort_values("timestamp").groupby("socket_id").tail(1)
+    sockets_summary = latest_per_socket[["socket_id", "kwh"]].to_dict(orient="records")
+    
+    energy_history = room_df.groupby("timestamp")["kwh"].sum().reset_index()
+    energy_history = energy_history.sort_values("timestamp").tail(12)
+    
+    temp_history = room_df.groupby("timestamp")["temp_ambient"].mean().reset_index()
+    temp_history = temp_history.sort_values("timestamp").tail(12)
+
+    return jsonify({
+        "room_id": room_id,
+        "sockets": sockets_summary,
+        "energy_history": energy_history.to_dict(orient="records"),
+        "temp_history": temp_history.to_dict(orient="records")
+    }), 200
+
+
 
 
 @app.route("/logout",methods=["GET","POST"])
@@ -407,3 +438,4 @@ def index():
 
 if __name__=="__main__":
     app.run(debug=True, port=6969)
+
