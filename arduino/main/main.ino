@@ -8,9 +8,11 @@
 const char* ssid = "YOUR_WIFI";
 const char* password = "YOUR_PASSWORD";
 
-// ---------------- ENDPOINTS ----------------
-const char* postUrl  = "https://c615-109-166-136-76.ngrok-free.app/data/thermostat";
-const char* stateUrl = "https://c615-109-166-136-76.ngrok-free.app/device/state";
+// ---------------- BACKEND ----------------
+const char* postUrl = "https://c615-109-166-136-76.ngrok-free.app/data/thermostat";
+
+// status endpoint with ID = 1
+String statusUrl = "https://c615-109-166-136-76.ngrok-free.app/thermostat/1/status";
 
 // ---------------- DHT ----------------
 #define DHTPIN D5
@@ -21,18 +23,17 @@ DHT dht(DHTPIN, DHTTYPE);
 // ---------------- LED ----------------
 #define LED_PIN D6
 
-bool ledState = true;
+bool deviceOnline = true;
 
-// ---------------- TIMERS ----------------
+// ---------------- TIMING ----------------
 unsigned long lastSend = 0;
 unsigned long lastCheck = 0;
 
-const unsigned long sendInterval = 15000; // 15 sec
-const unsigned long checkInterval = 5000; // 5 sec
+const unsigned long sendInterval = 15000;
+const unsigned long checkInterval = 5000;
 
-// ---------------- WIFI CONNECT ----------------
+// ---------------- WIFI ----------------
 void connectWiFi() {
-
   WiFi.begin(ssid, password);
 
   Serial.print("Connecting");
@@ -49,11 +50,13 @@ void connectWiFi() {
 // ---------------- SEND SENSOR DATA ----------------
 void sendData() {
 
+  if (!deviceOnline) return; // STOP SENDING IF OFFLINE
+
   float temp = dht.readTemperature();
   float hum  = dht.readHumidity();
 
   if (isnan(temp) || isnan(hum)) {
-    Serial.println("DHT read failed");
+    Serial.println("DHT failed");
     return;
   }
 
@@ -72,39 +75,35 @@ void sendData() {
 
   int code = http.POST(json);
 
-  Serial.print("POST code: ");
+  Serial.print("POST: ");
   Serial.println(code);
 
   http.end();
 }
 
-// ---------------- CHECK SERVER STATE ----------------
-void checkState() {
+// ---------------- CHECK STATUS ----------------
+void checkStatus() {
 
   WiFiClient client;
   HTTPClient http;
 
-  http.begin(client, stateUrl);
+  http.begin(client, statusUrl);
 
   int code = http.GET();
 
   if (code == 200) {
 
     String payload = http.getString();
-
-    Serial.print("State: ");
+    Serial.print("Status: ");
     Serial.println(payload);
 
-    // simple parsing
-    if (payload.indexOf("true") != -1) {
-      ledState = true;
+    // SIMPLE PARSING
+    if (payload.indexOf("false") != -1) {
+      deviceOnline = false;
     } else {
-      ledState = false;
+      deviceOnline = true;
     }
 
-  } else {
-    Serial.print("GET failed: ");
-    Serial.println(code);
   }
 
   http.end();
@@ -126,18 +125,18 @@ void setup() {
 // ---------------- LOOP ----------------
 void loop() {
 
-  // keep LED updated
-  digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+  // LED reflects online state
+  digitalWrite(LED_PIN, deviceOnline ? HIGH : LOW);
 
-  // send sensor data every 15s
+  // check backend status every 5 sec
+  if (millis() - lastCheck >= checkInterval) {
+    lastCheck = millis();
+    checkStatus();
+  }
+
+  // send data every 15 sec (only if online)
   if (millis() - lastSend >= sendInterval) {
     lastSend = millis();
     sendData();
-  }
-
-  // check server state every 5s
-  if (millis() - lastCheck >= checkInterval) {
-    lastCheck = millis();
-    checkState();
   }
 }
