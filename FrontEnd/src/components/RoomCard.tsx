@@ -42,79 +42,40 @@ const RoomCard: React.FC<Props> = ({ room }) => {
 
   // Consolidated fetch logic
   useEffect(() => {
-    const fetchAllRoomData = async () => {
-      if (sockets.length === 0) return;
-
+    const loadData = async () => {
       setLoadingKwh(true);
       try {
-        const socketIds = sockets.map((s) => s.id);
+        const data = await fetchRoomBulkData(room.id);
 
-        // This single function call fetches history for ALL sockets in the room
-        // We will repurpose it to update both the Room Analytics AND the individual sockets
-        const allHistoriesRaw = await Promise.all(
-          socketIds.map(async (id) => {
-            try {
-              return await fetchSocketHistory(id, room.id, 24);
-            } catch (err) {
-              // Log the error but don't throw it, so the rest of the sockets can load
-              console.warn(`Data missing for ${id}`);
-              return null;
-            }
-          })
-        );
-
-        // Filter out the nulls before processing analytics
-        const allHistories = allHistoriesRaw.filter(h => h !== null);
-
-
-        // 1. Update individual Socket kWh mapping
+        // 1. Update individual kWh values
         const kwhMap: Record<string, number> = {};
-        allHistories.forEach((historyData) => {
-          kwhMap[historyData.socket_id] = historyData.current_kwh || 0;
+        data.sockets.forEach((s: any) => {
+          kwhMap[s.socket_id] = s.kwh;
         });
         setSocketKwhMap(kwhMap);
 
-        // 2. Process Room Analytics (Temperature and Energy)
-        const temperatureHistory = allHistories[0]?.history || [];
-        const temperatureDataPoints = temperatureHistory.map((record: any) => ({
-          timestamp: new Date(record.timestamp).getTime(),
-          value: parseFloat((record.kwh * 100 * Math.sin(Math.random())).toFixed(1)),
-        })).slice(-12);
+        // 2. Update Charts
+        setTempData(data.temp_history.map((h: any) => ({
+          timestamp: new Date(h.timestamp).getTime(),
+          value: h.temp_ambient
+        })));
 
-        const energyByTimestamp: Record<number, number> = {};
-        allHistories.forEach((history) => {
-          history.history?.forEach((record: any) => {
-            const timestamp = new Date(record.timestamp).getTime();
-            const watt = (record.kwh || 0) * 1000;
-            energyByTimestamp[timestamp] = (energyByTimestamp[timestamp] || 0) + watt;
-          });
-        });
-
-        const energyDataPoints = Object.entries(energyByTimestamp)
-          .map(([ts, watts]) => ({
-            timestamp: parseInt(ts),
-            value: parseFloat(watts.toFixed(1)),
-          }))
-          .sort((a, b) => a.timestamp - b.timestamp)
-          .slice(-12);
-
-        setTempData(temperatureDataPoints);
-        setEnergyData(energyDataPoints);
+        setEnergyData(data.energy_history.map((h: any) => ({
+          timestamp: new Date(h.timestamp).getTime(),
+          value: h.kwh * 1000 // Convert to Watts
+        })));
 
       } catch (error) {
-        console.error('Failed to fetch room data:', error);
+        console.error("Failed to fetch room bulk data:", error);
       } finally {
         setLoadingKwh(false);
       }
     };
 
-    fetchAllRoomData();
-
-    // Poll every 30 seconds instead of 5
-    const interval = setInterval(fetchAllRoomData, 30000);
-
+    loadData();
+    const interval = setInterval(loadData, 30000); // Poll every 30s
     return () => clearInterval(interval);
-  }, [sockets, room.id]);
+  }, [room.id]);
 
   const handleSocketPress = (socket: Device) => {
     setSelectedSocket(socket);

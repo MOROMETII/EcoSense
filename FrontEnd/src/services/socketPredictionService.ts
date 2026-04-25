@@ -150,3 +150,18 @@ export const fetchRoomAnalytics = async (
     return { temperature: [], energyUsage: [] };
   }
 };
+
+// socketPredictionService.ts
+
+export const fetchRoomBulkData = async (roomId: string) => {
+  const res = await fetch(`${SERVER_URL}/room-data/${roomId}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
+
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+};
