@@ -21,19 +21,37 @@
 
 #include <WiFiClient.h>
 
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 #include <OneWire.h> 
 #include <DallasTemperature.h>
 
+#define D0 16
+#define D1 5
+#define D2 4
+#define D3 0
+#define D4 2
 #define D5 14
 #define D6 12
 #define D7 13
 #define D8 15
+#define D9 3
+#define RX 3
+#define D10 1
+#define TX 1
+#define D11 9
+#define SD2 9
+#define D12 10
+#define SD3 10
 
 
 #define LED_R   D6
 #define LED_G   D7
 #define LED_B   D8
+
+#define WIFI_ADDR "Free Virus WiFi"
+#define WIFI_PASS "1q2w3e4r5t"
 
 /********************************************************************/ 
 #define ONE_WIRE_BUS 14           // D5
@@ -49,8 +67,19 @@ String newHostname = "Thermostat";
 ESP8266WiFiMulti WiFiMulti;
 static uint32_t timer;
 
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+#define pirPin D1
+int pirState = LOW;
 
 void setup() {
+  pinMode(pirPin, INPUT_PULLDOWN_16);
+  lcd.begin(16, 2, LCD_5x8DOTS);
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("PIR sensor Ready!"); 
+  delay(2000);
+  lcd.clear();
 
   pinMode(LED_BUILTIN, OUTPUT);   // D4 ?????
 
@@ -88,16 +117,7 @@ void setup() {
   //WiFi.disconnect(true);   // true = erase from flash
   //delay(1000);
 
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-  WiFiMulti.addAP("Free Virus WiFi", "1q2w3e4r5t");
-
+  for(int i=6;--i;)WiFiMulti.addAP(WIFI_ADDR, WIFI_PASS);
 
   // Start up the library 
   sensors.begin(); 
@@ -130,10 +150,35 @@ void setup() {
 
 }
 
+void motion_detect() {
+  int motion = digitalRead(pirPin);
+  motion = !motion;  // Invert the logic
+  
+  if (motion == HIGH && pirState == LOW) {
+    // Motion just started
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Motion Detected");
+    Serial.println("Motion Detected");
+    pirState = HIGH;
+  }
+  else if (motion == LOW && pirState == HIGH) {
+    // Motion just stopped
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Not Detected");
+    Serial.println("Not Detected");
+    pirState = LOW;
+  }
+  Serial.println(motion);
+} 
+
 void loop() {
 
   Serial.print(".");
 
+
+  motion_detect();
 
 //  int rand = random(0, 100);
 //  digitalWrite(LED_R, rand % 3 == 0 ? LOW : HIGH);   
@@ -287,4 +332,3 @@ void printAddress(DeviceAddress deviceAddress)
     Serial.print(deviceAddress[i], HEX);
   }
 }
-
