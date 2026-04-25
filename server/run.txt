@@ -1,0 +1,3 @@
+./main.py
+
+cloudflared tunnel --url localhost:6969

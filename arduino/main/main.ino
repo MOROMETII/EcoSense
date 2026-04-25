@@ -1,10 +1,5 @@
-#include "DHT.h"
-#include <WiFiClientSecure.h>
 #include <Arduino.h>
-
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
-
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecureBearSSL.h>
 #include <DHT.h>
@@ -16,26 +11,28 @@ const char* password = "1q2w3e4r5t";
 
 // ---------------- BACKEND (HTTPS) ----------------
 const char* postUrl =
-"https://vegetable-explosion-roles-kinase.trycloudflare.com/data/thermostat";
+"https://remote-juan-flex-grow.trycloudflare.com/data/thermostat";
 
 const char* statusUrl =
-"https://vegetable-explosion-roles-kinase.trycloudflare.com/thermostat/1/status";
+"https://remote-juan-flex-grow.trycloudflare.com/thermostat/2/status";
 
 // ---------------- DHT ----------------
 #define DHTPIN 14
 #define DHTTYPE DHT11
 
+DHT dht(DHTPIN, DHTTYPE);
 
 // ---------------- LED ----------------
 #define LED_PIN 12
 
-  WiFi.mode(WIFI_STA);
-  WiFi.hostname(newHostname.c_str());
+bool deviceOnline = true;
 
-  for(int i=6;--i;)WiFiMulti.addAP(WIFI_ADDR, WIFI_PASS);
-  sensors.begin(); 
+// ---------------- TIMING ----------------
+unsigned long lastSend = 0;
+unsigned long lastCheck = 0;
 
-  Serial.print("Merge");
+const unsigned long sendInterval = 15000;
+const unsigned long checkInterval = 5000;
 
 // ---------------- WIFI ----------------
 void connectWiFi() {
