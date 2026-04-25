@@ -10,7 +10,7 @@ import requests
 
 from users import *
 from db import get_db
-from notifications import send_push, save_token, get_all_tokens, get_user_tokens
+from notifications import send_push, save_token, get_all_tokens, get_user_tokens, delete_user_token
 
 app = Flask(__name__,
             template_folder="template",
@@ -171,8 +171,13 @@ def login():
 def register_token():
     token = request.json.get("token")
     DeviceName = request.json.get("deviceName")
+<<<<<<< HEAD
     username = request.json.get("username")
     save_token(token, DeviceName, username)
+=======
+    username=request.json.get("username")
+    save_token(token,DeviceName,username)
+>>>>>>> a76e19e5caf938e7db2634f9ee3bcf5bebb2e882
     return {"status": "ok"}
 
 @app.route("/sendall", methods=['POST'])
@@ -430,7 +435,15 @@ def get_room_realtime(room_id):
 
 @app.route("/logout", methods=["GET", "POST"])
 def logout():
+<<<<<<< HEAD
     return {"status": "iesi afara frate"}, 200
+=======
+    token = request.json.get("token")
+    DeviceName = request.json.get("deviceName")
+    username=request.json.get("username")
+    delete_user_token(token,DeviceName,username)
+    return {"status":"iesi afara frate"},200
+>>>>>>> a76e19e5caf938e7db2634f9ee3bcf5bebb2e882
 
 @app.route("/")
 def index():
