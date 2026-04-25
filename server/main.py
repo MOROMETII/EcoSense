@@ -1,3 +1,4 @@
+#!/bin/python3
 from flask import Flask, jsonify, render_template
 from routers import auth, building, tracking, predictions, notifications
 #from inference import _load_artifacts
