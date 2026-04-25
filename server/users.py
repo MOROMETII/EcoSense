@@ -30,17 +30,11 @@ def register_new_user_endpoint(username,mail,password):
     if existing_mail:
         return {"error": "Email already registered!"}, 400
 
-    try:
-        db.execute("INSERT INTO users (Username, Password, Mail) VALUES (?, ?, ?)", (username, hpassword, mail))
-        db.commit()
-        
-        # we are good to go
-        return {"status": "Success"}, 200
-    except Exception as e:
-        print(e)
-        db.rollback()
-        return {"error": f"Registration failed: {str(e)}"}, 500
-
+    db.execute("INSERT INTO users (Username, Password, Mail) VALUES (?, ?, ?)", (username, hpassword, mail))
+    db.commit()
+    
+    # we are good to go
+    return {"status": "Success"}, 200
 
 
 def check_login_endpoint_username(username,password):
