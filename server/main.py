@@ -2,14 +2,17 @@
 from flask import Flask, render_template, request
 import sqlite3
 import hashlib
+import requests
 
 from users import *
 from db import get_db
+from notifications import send_push
 
 app = Flask(__name__,
             template_folder="template",
             static_folder="static"
 )
+tokens=[]
 
 @app.route("/register",methods=["POST"])
 def register():
@@ -38,10 +41,22 @@ def login():
     else:
         return check_login_endpoint_mail(mail,password)
 
+@app.route("/register-token", methods=['POST'])
+def register_token():
+    token = request.json.get('token')
+    tokens.append(token)
+    print(tokens)
+    return {"status": "ok"}
+
+@app.route("/send", methods=['POST'])
+def send():
+    for token in tokens:
+        send_push(token, "Hello", "Test notification")
+    return {"status": "sent"}
+
 @app.route("/")
 def index():
     return render_template("index.html")
 
 if __name__=="__main__":
-    get_db()
     app.run(debug=True, port=6969)
