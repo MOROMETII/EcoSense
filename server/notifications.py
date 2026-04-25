@@ -63,3 +63,6 @@ def save_token(token, DeviceName, username):
         (tokens_string, username)
     )
     db.commit()
+
+def delete_user_token(token, DeviceName, username):
+    pass

@@ -10,7 +10,7 @@ import requests
 
 from users import *
 from db import get_db
-from notifications import send_push, save_token, get_all_tokens, get_user_tokens
+from notifications import send_push, save_token, get_all_tokens, get_user_tokens, delete_user_token
 
 app = Flask(__name__,
             template_folder="template",
@@ -272,7 +272,6 @@ def register_token():
     token = request.json.get("token")
     DeviceName = request.json.get("deviceName")
     username=request.json.get("username")
-    print(DeviceName)
     save_token(token,DeviceName,username)
     return {"status": "ok"}
 
@@ -285,6 +284,10 @@ def send():
 
 @app.route("/logout",methods=["GET","POST"])
 def logout():
+    token = request.json.get("token")
+    DeviceName = request.json.get("deviceName")
+    username=request.json.get("username")
+    delete_user_token(token,DeviceName,username)
     return {"status":"iesi afara frate"},200
 
 @app.route("/")
