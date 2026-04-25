@@ -5,14 +5,15 @@
 #include <DHT.h>
 
 // ---------------- WIFI ----------------
-const char* ssid = "YOUR_WIFI";
-const char* password = "YOUR_PASSWORD";
+const char* ssid = "Free Virus WiFi";
+const char* password = "1q2w3e4r5t";
 
-// ---------------- BACKEND ----------------
-const char* postUrl = "https://c615-109-166-136-76.ngrok-free.app/data/thermostat";
+// ---------------- BACKEND (HTTP ONLY) ----------------
+const char* postUrl =
+"https://botryose-unshadily-wynell.ngrok-free.dev/data/thermostat";
 
-// status endpoint with ID = 1
-String statusUrl = "https://c615-109-166-136-76.ngrok-free.app/thermostat/1/status";
+const char* statusUrl =
+"https://botryose-unshadily-wynell.ngrok-free.dev/thermostat/1/status";
 
 // ---------------- DHT ----------------
 #define DHTPIN D5
@@ -34,23 +35,39 @@ const unsigned long checkInterval = 5000;
 
 // ---------------- WIFI ----------------
 void connectWiFi() {
+
+  Serial.println("\nConnecting WiFi...");
+
+  WiFi.persistent(false);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
+  delay(1000);
+
   WiFi.begin(ssid, password);
 
-  Serial.print("Connecting");
+  unsigned long start = millis();
 
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
     delay(500);
     Serial.print(".");
   }
 
-  Serial.println("\nConnected!");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+
+    delay(1000); // stabilize network stack
+  } else {
+    Serial.println("\nWiFi FAILED");
+  }
 }
 
 // ---------------- SEND SENSOR DATA ----------------
 void sendData() {
 
-  if (!deviceOnline) return; // STOP SENDING IF OFFLINE
+  if (!deviceOnline) return;
+  if (WiFi.status() != WL_CONNECTED) return;
 
   float temp = dht.readTemperature();
   float hum  = dht.readHumidity();
@@ -63,20 +80,32 @@ void sendData() {
   WiFiClient client;
   HTTPClient http;
 
-  http.begin(client, postUrl);
-  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(5000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-  String json =
-    "{"
-    "\"thermostat_id\":1,"
-    "\"temp_ambient\":" + String(temp, 2) + ","
-    "\"humidity\":" + String(hum, 2) +
-    "}";
+  if (!http.begin(client, postUrl)) {
+    Serial.println("HTTP begin failed (POST)");
+    return;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("ngrok-skip-browser-warning", "true");
+
+  String json = "{";
+  json += "\"thermostat_id\":1,";
+  json += "\"temp_ambient\":" + String(temp, 2) + ",";
+  json += "\"humidity\":" + String(hum, 2);
+  json += "}";
 
   int code = http.POST(json);
 
-  Serial.print("POST: ");
+  Serial.print("POST code: ");
   Serial.println(code);
+
+  if (code == -1) {
+    Serial.println("POST failed (network issue)");
+  }
 
   http.end();
 }
@@ -84,26 +113,36 @@ void sendData() {
 // ---------------- CHECK STATUS ----------------
 void checkStatus() {
 
+  if (WiFi.status() != WL_CONNECTED) return;
+
   WiFiClient client;
   HTTPClient http;
 
-  http.begin(client, statusUrl);
+  http.setTimeout(5000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  if (!http.begin(client, statusUrl)) {
+    Serial.println("HTTP begin failed (GET)");
+    return;
+  }
+
+  http.addHeader("ngrok-skip-browser-warning", "true");
 
   int code = http.GET();
+
+  Serial.print("GET code: ");
+  Serial.println(code);
 
   if (code == 200) {
 
     String payload = http.getString();
-    Serial.print("Status: ");
-    Serial.println(payload);
+    Serial.println("Status: " + payload);
 
-    // SIMPLE PARSING
-    if (payload.indexOf("false") != -1) {
-      deviceOnline = false;
-    } else {
-      deviceOnline = true;
-    }
+    deviceOnline = (payload.indexOf("false") == -1);
 
+  } else {
+    Serial.println("GET failed");
   }
 
   http.end();
@@ -125,16 +164,18 @@ void setup() {
 // ---------------- LOOP ----------------
 void loop() {
 
-  // LED reflects online state
   digitalWrite(LED_PIN, deviceOnline ? HIGH : LOW);
 
-  // check backend status every 5 sec
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+    return;
+  }
+
   if (millis() - lastCheck >= checkInterval) {
     lastCheck = millis();
     checkStatus();
   }
 
-  // send data every 15 sec (only if online)
   if (millis() - lastSend >= sendInterval) {
     lastSend = millis();
     sendData();
