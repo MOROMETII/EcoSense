@@ -5,3 +5,5 @@ CREATE TABLE users (
     Mail varchar(50) NOT NULL,
     PRIMARY KEY (ID)
 );
+
+ALTER TABLE users ADD COLUMN devices varchar(255);

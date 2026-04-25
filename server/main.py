@@ -6,13 +6,12 @@ import requests
 
 from users import *
 from db import get_db
-from notifications import send_push
+from notifications import send_push, save_token, get_all_tokens, get_user_tokens
 
 app = Flask(__name__,
             template_folder="template",
             static_folder="static"
 )
-tokens=[]
 
 @app.route("/register",methods=["POST"])
 def register():
@@ -43,16 +42,23 @@ def login():
 
 @app.route("/register-token", methods=['POST'])
 def register_token():
-    token = request.json.get('token')
-    tokens.append(token)
-    print(tokens)
+    token = request.json.get("token")
+    DeviceName = request.json.get("deviceName")
+    username=request.json.get("username")
+    print(DeviceName)
+    save_token(token,DeviceName,username)
     return {"status": "ok"}
 
-@app.route("/send", methods=['POST'])
+@app.route("/sendall", methods=['POST'])
 def send():
+    tokens=get_all_tokens()
     for token in tokens:
         send_push(token, "Hello", "Test notification")
     return {"status": "sent"}
+
+@app.route("/logout",methods=["GET","POST"])
+def logout():
+    return {"status":"iesi afara frate"},200
 
 @app.route("/")
 def index():
