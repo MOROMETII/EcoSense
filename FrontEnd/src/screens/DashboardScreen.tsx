@@ -14,9 +14,13 @@ const DashboardScreen: React.FC = () => {
   const rooms = useRoomStore((s) => s.rooms);
   const updateRoom = useRoomStore((s) => s.updateRoom);
   const [refreshing, setRefreshing] = useState(false);
+  // Incrementing this tells every RoomCard to reload its CSV / temperature data
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    // Bump immediately so RoomCards start their fetches in parallel
+    setRefreshKey((k) => k + 1);
     try {
       await Promise.all(
         rooms.map(async (room) => {
@@ -36,7 +40,7 @@ const DashboardScreen: React.FC = () => {
     }
   }, [rooms, updateRoom]);
 
-  const totalDevices  = rooms.reduce((s, r) => s + r.devices.length, 0);
+  const totalDevices = rooms.reduce((s, r) => s + r.devices.length, 0);
   const totalAnomalies = rooms.reduce((s, r) => s + r.analytics.anomalies.length, 0);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -69,10 +73,12 @@ const DashboardScreen: React.FC = () => {
         {rooms.length > 0 && (
           <View style={[styles.summaryBar, { backgroundColor: colors.surfaceVariant }]}>
             {[
-              { icon: 'floor-plan',   color: colors.primary,   value: rooms.length,    label: 'Rooms'   },
-              { icon: 'devices',      color: colors.secondary, value: totalDevices,    label: 'Devices' },
-              { icon: 'alert-circle', color: totalAnomalies > 0 ? '#EF4444' : colors.outline,
-                                                                value: totalAnomalies,  label: 'Alerts'  },
+              { icon: 'floor-plan', color: colors.primary, value: rooms.length, label: 'Rooms' },
+              { icon: 'devices', color: colors.secondary, value: totalDevices, label: 'Devices' },
+              {
+                icon: 'alert-circle', color: totalAnomalies > 0 ? '#EF4444' : colors.outline,
+                value: totalAnomalies, label: 'Alerts'
+              },
             ].map((item) => (
               <View key={item.label} style={styles.summaryItem}>
                 <MaterialCommunityIcons name={item.icon as any} size={18} color={item.color} />
@@ -94,7 +100,9 @@ const DashboardScreen: React.FC = () => {
             </Text>
           </View>
         ) : (
-          rooms.map((room) => <RoomCard key={room.id} room={room} />)
+          rooms.map((room) => (
+            <RoomCard key={room.id} room={room} refreshKey={refreshKey} />
+          ))
         )}
       </ScrollView>
     </ScreenWrapper>
@@ -102,13 +110,13 @@ const DashboardScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  content:     { padding: 16, paddingBottom: 32 },
-  headerRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
-  heading:     { fontWeight: '700' },
+  content: { padding: 16, paddingBottom: 32 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 },
+  heading: { fontWeight: '700' },
   refreshHint: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  summaryBar:  { flexDirection: 'row', justifyContent: 'space-around', borderRadius: 16, padding: 16, marginBottom: 20 },
+  summaryBar: { flexDirection: 'row', justifyContent: 'space-around', borderRadius: 16, padding: 16, marginBottom: 20 },
   summaryItem: { alignItems: 'center', gap: 2 },
-  emptyState:  { alignItems: 'center', marginTop: 60, paddingHorizontal: 32 },
+  emptyState: { alignItems: 'center', marginTop: 60, paddingHorizontal: 32 },
 });
 
 export default DashboardScreen;

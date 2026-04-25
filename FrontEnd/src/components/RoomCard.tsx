@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, Surface } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -11,12 +11,14 @@ import type { Room, Device, DataPoint } from '../models/types';
 
 interface Props {
   room: Room;
+  // Passed down from DashboardScreen; incrementing it triggers a fresh fetch
+  refreshKey?: number;
 }
 
 const ANOMALY_COLOR = '#EF4444';
 const ENERGY_COLOR = '#F59E0B';
 
-const RoomCard: React.FC<Props> = ({ room }) => {
+const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const [expanded, setExpanded] = useState(false);
   const [selectedSocket, setSelectedSocket] = useState<Device | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -29,65 +31,73 @@ const RoomCard: React.FC<Props> = ({ room }) => {
   const hasAnomalies = room.analytics.anomalies.length > 0;
   const accentColor = hasAnomalies ? ANOMALY_COLOR : colors.primary;
 
+  const tempValues = tempData.length > 0
+    ? tempData.map((d) => d.value)
+    : room.analytics.temperature.map((d) => d.value);
 
-  const tempValues = tempData.length > 0 ? tempData.map((d) => d.value) : room.analytics.temperature.map((d) => d.value);
-  const energyValues = energyData.length > 0 ? energyData.map((d) => d.value) : room.analytics.energyUsage.map((d) => d.value);
+  const energyValues = energyData.length > 0
+    ? energyData.map((d) => d.value)
+    : room.analytics.energyUsage.map((d) => d.value);
 
-  const latestTemp = tempData.length > 0 ? tempData.at(-1)?.value ?? '—' : room.analytics.temperature.at(-1)?.value ?? '—';
+  const latestTemp = tempData.length > 0
+    ? tempData.at(-1)?.value ?? '—'
+    : room.analytics.temperature.at(-1)?.value ?? '—';
+
   const sockets = room.devices.filter((d) => d.type === 'smart_socket');
-
-
   const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
-  const latestEnergy = loadingKwh ? '...' : (totalKwh * 1000).toFixed(0);
+  const latestEnergy = loadingKwh ? '…' : (totalKwh * 1000).toFixed(0);
 
+  // ── Data fetch (runs on mount, every 30 s, and whenever refreshKey changes) ──
+  const loadData = useCallback(async () => {
+    setLoadingKwh(true);
+    try {
+      const data = await fetchRoomBulkData(room.id);
+
+      const kwhMap: Record<string, number> = {};
+      (data.sockets as any[]).forEach((s) => { kwhMap[s.socket_id] = s.kwh; });
+      setSocketKwhMap(kwhMap);
+
+      setTempData(
+        (data.temp_history as any[]).map((h) => ({
+          timestamp: new Date(h.timestamp).getTime(),
+          value: h.temp_ambient,
+        })),
+      );
+
+      setEnergyData(
+        (data.energy_history as any[]).map((h) => ({
+          timestamp: new Date(h.timestamp).getTime(),
+          value: h.kwh * 1000,   // kWh → W for display
+        })),
+      );
+    } catch (err) {
+      console.error('Failed to fetch room bulk data:', err);
+    } finally {
+      setLoadingKwh(false);
+    }
+  }, [room.id]);
+
+  // Re-run whenever refreshKey bumps (triggered by pull-to-refresh in Dashboard)
   useEffect(() => {
-    const loadData = async () => {
-      setLoadingKwh(true);
-      try {
-        const data = await fetchRoomBulkData(room.id);
-
-        const kwhMap: Record<string, number> = {};
-        data.sockets.forEach((s: any) => {
-          kwhMap[s.socket_id] = s.kwh;
-        });
-        setSocketKwhMap(kwhMap);
-
-        setTempData(data.temp_history.map((h: any) => ({
-          timestamp: new Date(h.timestamp).getTime(),
-          value: h.temp_ambient
-        })));
-
-        setEnergyData(data.energy_history.map((h: any) => ({
-          timestamp: new Date(h.timestamp).getTime(),
-          value: h.kwh * 1000
-        })));
-
-      } catch (error) {
-        console.error("Failed to fetch room bulk data:", error);
-      } finally {
-        setLoadingKwh(false);
-      }
-    };
-
     loadData();
+  }, [loadData, refreshKey]);
+
+  // Auto-poll every 30 s independently of the manual refresh
+  useEffect(() => {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [room.id]);
+  }, [loadData]);
 
   const handleSocketPress = (socket: Device) => {
     setSelectedSocket(socket);
     setModalVisible(true);
   };
-  const getSocketKwh = (socketId: string) => {
-    return socketKwhMap[socketId] ?? 0;
-  };
+
+  const getSocketKwh = (socketId: string) => socketKwhMap[socketId] ?? 0;
 
   return (
     <>
-      <Surface
-        style={[styles.card, { backgroundColor: colors.surface }]}
-        elevation={2}
-      >
+      <Surface style={[styles.card, { backgroundColor: colors.surface }]} elevation={2}>
         {/* Top accent bar */}
         <View style={[styles.accentBar, { backgroundColor: accentColor }]} />
 
@@ -139,12 +149,12 @@ const RoomCard: React.FC<Props> = ({ room }) => {
             </View>
           </TouchableOpacity>
 
-          {/* Expanded */}
+          {/* Expanded content */}
           {expanded && (
             <View style={styles.expanded}>
               <View style={[styles.divider, { backgroundColor: colors.outline + '22' }]} />
 
-              {/* Sparklines */}
+              {/* Sparklines — now backed by live CSV data */}
               <View style={styles.chartRow}>
                 <View style={styles.chartBlock}>
                   <Text variant="labelSmall" style={{ color: colors.outline, letterSpacing: 0.6 }}>
@@ -160,7 +170,7 @@ const RoomCard: React.FC<Props> = ({ room }) => {
                 </View>
               </View>
 
-              {/* Sockets Section */}
+              {/* Sockets */}
               {sockets.length > 0 && (
                 <View style={styles.section}>
                   <Text variant="labelSmall" style={{ color: colors.primary, marginBottom: 8, letterSpacing: 0.6 }}>
@@ -171,43 +181,17 @@ const RoomCard: React.FC<Props> = ({ room }) => {
                       <TouchableOpacity
                         key={socket.id}
                         onPress={() => handleSocketPress(socket)}
-                        style={[
-                          styles.socketCard,
-                          { backgroundColor: colors.surfaceVariant },
-                        ]}
+                        style={[styles.socketCard, { backgroundColor: colors.surfaceVariant }]}
                         activeOpacity={0.7}
                       >
-                        <MaterialCommunityIcons
-                          name="power-socket-eu"
-                          size={24}
-                          color={colors.primary}
-                        />
-                        <Text
-                          variant="bodySmall"
-                          style={{
-                            fontWeight: '600',
-                            color: colors.onSurface,
-                            marginTop: 6,
-                            textAlign: 'center',
-                          }}
-                        >
+                        <MaterialCommunityIcons name="power-socket-eu" size={24} color={colors.primary} />
+                        <Text variant="bodySmall" style={{ fontWeight: '600', color: colors.onSurface, marginTop: 6, textAlign: 'center' }}>
                           {socket.id}
                         </Text>
-                        <Text
-                          variant="labelSmall"
-                          style={{
-                            color: colors.outline,
-                            marginTop: 2,
-                          }}
-                        >
+                        <Text variant="labelSmall" style={{ color: colors.outline, marginTop: 2 }}>
                           {(getSocketKwh(socket.id) * 1000).toFixed(1)} W
                         </Text>
-                        <MaterialCommunityIcons
-                          name="chevron-right"
-                          size={18}
-                          color={colors.outline}
-                          style={styles.socketArrow}
-                        />
+                        <MaterialCommunityIcons name="chevron-right" size={18} color={colors.outline} style={styles.socketArrow} />
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -223,9 +207,7 @@ const RoomCard: React.FC<Props> = ({ room }) => {
                   {room.analytics.anomalies.map((a, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: ANOMALY_COLOR + '12', borderColor: ANOMALY_COLOR + '44' }]}>
                       <MaterialCommunityIcons name="alert-circle" size={14} color={ANOMALY_COLOR} />
-                      <Text variant="bodySmall" style={{ color: ANOMALY_COLOR, marginLeft: 6, flex: 1 }}>
-                        {a}
-                      </Text>
+                      <Text variant="bodySmall" style={{ color: ANOMALY_COLOR, marginLeft: 6, flex: 1 }}>{a}</Text>
                     </View>
                   ))}
                 </View>
@@ -235,91 +217,34 @@ const RoomCard: React.FC<Props> = ({ room }) => {
         </View>
       </Surface>
 
-      {/* Socket Details Modal */}
       <SocketDetailsModal
         visible={modalVisible}
         socket={selectedSocket}
         roomId={room.id}
-        onClose={() => {
-          setModalVisible(false);
-          setSelectedSocket(null);
-        }}
+        onClose={() => { setModalVisible(false); setSelectedSocket(null); }}
       />
     </>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 20,
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  accentBar: {
-    height: 4,
-  },
-  body: {
-    padding: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  iconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  card: { borderRadius: 20, marginBottom: 14, overflow: 'hidden' },
+  accentBar: { height: 4 },
+  body: { padding: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  iconBadge: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   titleGroup: { flex: 1, gap: 2 },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  statBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
+  statsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  statBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   expanded: { marginTop: 4 },
   divider: { height: 1, marginVertical: 12 },
   chartRow: { flexDirection: 'row', gap: 12, marginBottom: 4 },
   chartBlock: { flex: 1, gap: 4 },
   section: { marginTop: 12 },
-  socketsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  socketCard: {
-    flex: 1,
-    minWidth: '45%',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  socketArrow: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 6,
-  },
+  socketsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  socketCard: { flex: 1, minWidth: '45%', paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, alignItems: 'center', position: 'relative' },
+  socketArrow: { position: 'absolute', top: 8, right: 8 },
+  chip: { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 6 },
 });
 
 export default RoomCard;
-
