@@ -1,5 +1,10 @@
+#include "DHT.h"
+#include <WiFiClientSecure.h>
 #include <Arduino.h>
+
 #include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>
+
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecureBearSSL.h>
 #include <DHT.h>
@@ -20,19 +25,17 @@ const char* statusUrl =
 #define DHTPIN 14
 #define DHTTYPE DHT11
 
-DHT dht(DHTPIN, DHTTYPE);
 
 // ---------------- LED ----------------
 #define LED_PIN 12
 
-bool deviceOnline = true;
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname(newHostname.c_str());
 
-// ---------------- TIMING ----------------
-unsigned long lastSend = 0;
-unsigned long lastCheck = 0;
+  for(int i=6;--i;)WiFiMulti.addAP(WIFI_ADDR, WIFI_PASS);
+  sensors.begin(); 
 
-const unsigned long sendInterval = 15000;
-const unsigned long checkInterval = 5000;
+  Serial.print("Merge");
 
 // ---------------- WIFI ----------------
 void connectWiFi() {

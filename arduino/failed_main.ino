@@ -43,7 +43,7 @@
 #define D11 9
 #define SD2 9
 #define D12 10
-#define SD3 10
+#define SD3 10  
 
 
 #define LED_R   D6
