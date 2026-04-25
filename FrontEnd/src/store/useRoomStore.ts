@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import type { Room, DataPoint } from '../models/types';
+import { create } from "zustand";
+import type { Room, DataPoint } from "../models/types";
 
 const now = Date.now();
 
@@ -11,47 +11,34 @@ const pts = (base: number, noise: number, count = 12): DataPoint[] =>
 
 const MOCK_ROOMS: Room[] = [
   {
-    id: '1',
-    name: 'Office A',
+    id: "ROOM_101",
+    name: "Office A",
     devices: [
-      { id: 'd1', type: 'temperature_sensor', position: { x: 2, y: 3 }, temperature: 22.5 },
-      { id: 'd2', type: 'smart_socket', position: { x: 5, y: 1 }, energyUsage: 120 },
-      { id: 'd3', type: 'smart_socket', position: { x: 6, y: 5 }, energyUsage: 340 },
+      {
+        id: "d1",
+        type: "temperature_sensor",
+        position: { x: 2, y: 3 },
+        temperature: 22.5,
+      },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        id: `SKT_${String(i + 1).padStart(2, "0")}`,
+        type: "smart_socket" as const,
+        position: { x: (i % 5) * 2, y: Math.floor(i / 5) * 2 },
+        energyUsage: 50 + Math.random() * 100,
+      })),
     ],
     blueprint: {
       features: [
-        { type: 'door',   wall: 'bottom', offset: 0.3 },
-        { type: 'window', wall: 'top',    offset: 0.6 },
-        { type: 'window', wall: 'right',  offset: 0.5 },
+        { type: "door", wall: "bottom", offset: 0.3 },
+        { type: "window", wall: "top", offset: 0.6 },
+        { type: "window", wall: "right", offset: 0.5 },
       ],
     },
     analytics: {
       temperature: pts(22, 4),
       energyUsage: pts(300, 100),
-      aiSuggestions: ['High energy usage detected from socket #3'],
+      aiSuggestions: [],
       anomalies: [],
-    },
-  },
-  {
-    id: '2',
-    name: 'Meeting Room',
-    devices: [
-      { id: 'd4', type: 'temperature_sensor', position: { x: 3, y: 4 }, temperature: 19.2 },
-      { id: 'd5', type: 'smart_socket', position: { x: 1, y: 2 }, energyUsage: 80 },
-    ],
-    blueprint: {
-      features: [
-        { type: 'door',   wall: 'left',   offset: 0.7 },
-        { type: 'window', wall: 'top',    offset: 0.4 },
-        { type: 'window', wall: 'top',    offset: 0.75 },
-        { type: 'window', wall: 'right',  offset: 0.35 },
-      ],
-    },
-    analytics: {
-      temperature: pts(18, 6),
-      energyUsage: pts(120, 40),
-      aiSuggestions: ['Possible open window detected (temperature drop)'],
-      anomalies: ['Temperature dropped 4°C in the last hour'],
     },
   },
 ];
@@ -68,5 +55,6 @@ export const useRoomStore = create<RoomStore>((set) => ({
   addRoom: (room) => set((s) => ({ rooms: [...s.rooms, room] })),
   updateRoom: (room) =>
     set((s) => ({ rooms: s.rooms.map((r) => (r.id === room.id ? room : r)) })),
-  deleteRoom: (id) => set((s) => ({ rooms: s.rooms.filter((r) => r.id !== id) })),
+  deleteRoom: (id) =>
+    set((s) => ({ rooms: s.rooms.filter((r) => r.id !== id) })),
 }));

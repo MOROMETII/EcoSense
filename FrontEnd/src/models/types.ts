@@ -10,6 +10,24 @@ export interface Analytics {
   anomalies: string[];
 }
 
+export interface SocketPrediction {
+  socket_id: string;
+  room_id: string;
+  current_kwh: number;
+  predicted_label: string; // "Low", "Normal", "High", "Wasteful"
+  confidence: number; // 0-1
+  insight: string;
+  history_count: number;
+  history: Array<{
+    timestamp: string;
+    socket_id: string;
+    kwh: number;
+    predicted_label_name: string;
+    confidence: number;
+    insight: string;
+  }>;
+}
+
 export interface Device {
   id: string;
   type: 'smart_socket' | 'temperature_sensor';

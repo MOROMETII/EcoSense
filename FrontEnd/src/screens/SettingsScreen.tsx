@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Text, List, Switch, Button, Avatar, Surface, Divider } from 'react-native-paper';
+import { Text, List, Switch, Button, Avatar, Surface, Divider, Snackbar } from 'react-native-paper';
 import { useTheme } from 'react-native-paper';
 
 import ScreenWrapper from '../components/ScreenWrapper';
@@ -11,6 +11,17 @@ const SettingsScreen: React.FC = () => {
   const { colors } = useTheme();
   const { isDark, toggleTheme } = useAppTheme();
   const { logout, user } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [snackMsg, setSnackMsg]     = useState('');
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    const result = await logout();
+    setLoggingOut(false);
+    if (!result.ok) {
+      setSnackMsg(result.message ?? 'Logout failed. Please try again.');
+    }
+  };
 
   const initials = (user?.name ?? 'U')
     .split(' ')
@@ -20,7 +31,8 @@ const SettingsScreen: React.FC = () => {
     .slice(0, 2);
 
   return (
-    <ScreenWrapper>
+    <View style={{ flex: 1 }}>
+      <ScreenWrapper>
       <Text variant="headlineMedium" style={styles.heading}>
         Settings
       </Text>
@@ -59,14 +71,26 @@ const SettingsScreen: React.FC = () => {
       </Text>
       <Button
         mode="outlined"
-        onPress={logout}
+        onPress={handleLogout}
+        loading={loggingOut}
+        disabled={loggingOut}
         style={styles.logoutButton}
         textColor="#EF4444"
         icon="logout"
       >
         Logout
       </Button>
-    </ScreenWrapper>
+      </ScreenWrapper>
+      <Snackbar
+        visible={snackMsg !== ''}
+        onDismiss={() => setSnackMsg('')}
+        duration={5000}
+        style={{ marginBottom: 80 }}
+        action={{ label: 'Retry', onPress: handleLogout }}
+      >
+        {snackMsg}
+      </Snackbar>
+    </View>
   );
 };
 
