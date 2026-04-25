@@ -382,6 +382,51 @@ def get_room_data(room_id):
         "temp_history":   temp_history.to_dict(orient="records"),
     }), 200
 
+# ─── Per-room cursor store ────────────────────────────────────────────────────
+_room_cursors: dict[str, int] = {}
+
+@app.route("/room-realtime/<room_id>", methods=["GET"])
+def get_room_realtime(room_id):
+    loop = request.args.get("loop", "true").lower() == "true"
+
+    try:
+        df = get_cached_df()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    room_df = df[df["room_id"] == room_id]
+    if room_df.empty:
+        return jsonify({"error": "No data found for this room"}), 404
+
+    timestamps = sorted(room_df["timestamp"].unique())
+    total_steps = len(timestamps)
+
+    if total_steps == 0:
+        return jsonify({"error": "No timestamps found"}), 404
+    
+    if room_id not in _room_cursors:
+        _room_cursors[room_id] = 0
+
+    cursor = _room_cursors[room_id]
+    current_ts = timestamps[cursor]
+    step_df = room_df[room_df["timestamp"] == current_ts]
+
+    total_kwh = step_df["kwh"].sum()
+    avg_temp = step_df["temp_ambient"].mean()
+    sockets_summary = step_df[["socket_id", "kwh"]].to_dict(orient="records")
+
+    _room_cursors[room_id] = (cursor + 1) % total_steps if loop else min(cursor + 1, total_steps - 1)
+
+    return jsonify({
+        "room_id": room_id,
+        "timestamp": str(current_ts),
+        "total_kwh": float(total_kwh),
+        "avg_temp": float(avg_temp),
+        "sockets": sockets_summary,
+        "cursor": cursor,
+        "total_steps": total_steps
+    }), 200
+
 
 @app.route("/logout", methods=["GET", "POST"])
 def logout():

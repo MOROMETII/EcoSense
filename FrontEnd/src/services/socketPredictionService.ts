@@ -21,6 +21,15 @@ export async function fetchRoomBulkData(roomId: string) {
   }
   return res.json();
 }
+export async function fetchRoomRealtime(roomId: string) {
+  const url = `${BASE_URL}/room-realtime/${encodeURIComponent(roomId)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 export interface RealtimeTick {
   socket_id: string;
   timestamp: string;

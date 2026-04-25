@@ -177,6 +177,7 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
             visible={visible}
             transparent
             animationType="slide"
+            presentationStyle='fullScreen'
             onRequestClose={onClose}
         >
             <View style={[styles.container, { backgroundColor: colors.background }]}>

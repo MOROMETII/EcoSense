@@ -6,12 +6,11 @@ import { useTheme } from 'react-native-paper';
 
 import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
-import { fetchRoomBulkData } from '../services/socketPredictionService';
+import { fetchRoomBulkData, fetchRoomRealtime } from '../services/socketPredictionService';
 import type { Room, Device, DataPoint } from '../models/types';
 
 interface Props {
   room: Room;
-  // Passed down from DashboardScreen; incrementing it triggers a fresh fetch
   refreshKey?: number;
 }
 
@@ -47,7 +46,8 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
   const latestEnergy = loadingKwh ? '…' : (totalKwh * 1000).toFixed(0);
 
-  // ── Data fetch (runs on mount, every 30 s, and whenever refreshKey changes) ──
+  const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
   const loadData = useCallback(async () => {
     setLoadingKwh(true);
     try {
@@ -57,19 +57,15 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
       (data.sockets as any[]).forEach((s) => { kwhMap[s.socket_id] = s.kwh; });
       setSocketKwhMap(kwhMap);
 
-      setTempData(
-        (data.temp_history as any[]).map((h) => ({
-          timestamp: new Date(h.timestamp).getTime(),
-          value: h.temp_ambient,
-        })),
-      );
+      setTempData((data.temp_history as any[]).map((h) => ({
+        timestamp: new Date(h.timestamp).getTime(),
+        value: h.temp_ambient,
+      })));
 
-      setEnergyData(
-        (data.energy_history as any[]).map((h) => ({
-          timestamp: new Date(h.timestamp).getTime(),
-          value: h.kwh * 1000,   // kWh → W for display
-        })),
-      );
+      setEnergyData((data.energy_history as any[]).map((h) => ({
+        timestamp: new Date(h.timestamp).getTime(),
+        value: h.kwh * 1000,
+      })));
     } catch (err) {
       console.error('Failed to fetch room bulk data:', err);
     } finally {
@@ -77,12 +73,38 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
     }
   }, [room.id]);
 
-  // Re-run whenever refreshKey bumps (triggered by pull-to-refresh in Dashboard)
-  useEffect(() => {
-    loadData();
-  }, [loadData, refreshKey]);
+  const pollRealtime = useCallback(async () => {
+    try {
+      const tick = await fetchRoomRealtime(room.id);
+      const kwhMap: Record<string, number> = {};
+      tick.sockets.forEach((s: any) => { kwhMap[s.socket_id] = s.kwh; });
+      setSocketKwhMap(kwhMap);
 
-  // Auto-poll every 30 s independently of the manual refresh
+      const tickTime = new Date(tick.timestamp).getTime();
+
+      setTempData((prev) => {
+        const next = [...prev, { timestamp: tickTime, value: tick.avg_temp }];
+        return next.length > 24 ? next.slice(-24) : next;
+      });
+
+      setEnergyData((prev) => {
+        const next = [...prev, { timestamp: tickTime, value: tick.total_kwh * 1000 }];
+        return next.length > 24 ? next.slice(-24) : next;
+      });
+
+    } catch (err) {
+    }
+  }, [room.id]);
+
+  useEffect(() => {
+    loadData().then(() => {
+      pollTimerRef.current = setInterval(pollRealtime, 5000);
+    });
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [loadData, pollRealtime, refreshKey]);
   useEffect(() => {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
@@ -98,12 +120,11 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   return (
     <>
       <Surface style={[styles.card, { backgroundColor: colors.surface }]} elevation={2}>
-        {/* Top accent bar */}
+
         <View style={[styles.accentBar, { backgroundColor: accentColor }]} />
 
         <View style={styles.body}>
           <TouchableOpacity onPress={() => setExpanded((e) => !e)} activeOpacity={0.8}>
-            {/* Header */}
             <View style={styles.header}>
               <View style={[styles.iconBadge, { backgroundColor: accentColor + '18' }]}>
                 <MaterialCommunityIcons name="floor-plan" size={20} color={accentColor} />
