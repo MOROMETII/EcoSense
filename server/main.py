@@ -127,8 +127,11 @@ def predict_batch():
         "count": 2520,
         "predictions": [
             {
-                "timestamp": "...", "socket_id": "SKT_01", "kwh": 0.05,
-                "predicted_label_id": 0, "predicted_label_name": "Low",
+                "timestamp": "...",
+                "socket_id": "SKT_01",
+                "kwh": 0.05,
+                "predicted_label_id": 0,
+                "predicted_label_name": "Low", "Normal" , "High" , 'Wasteful'
                 "confidence": 0.97,
                 "insight": "SKT_01 is functioning at a low, normal rate (avg 0.050 kWh over the last hour)."
             },
