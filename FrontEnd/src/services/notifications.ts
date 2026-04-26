@@ -78,3 +78,14 @@ export async function registerForPushNotifications(username: string): Promise<vo
   } catch (e) {
   }
 }
+
+/**
+ * Fires an immediate local notification (no server required).
+ * Used to alert the user when a socket enters High or Wasteful state.
+ */
+export async function sendLocalAlert(title: string, body: string): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body, sound: true },
+    trigger: null, // fire immediately
+  });
+}

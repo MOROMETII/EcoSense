@@ -7,6 +7,7 @@ import { useTheme } from 'react-native-paper';
 import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
 import { fetchRoomBulkData, fetchRoomRealtime, fetchSocketRealtime } from '../services/socketPredictionService';
+import { sendLocalAlert } from '../services/notifications';
 import type { Room, Device, DataPoint } from '../models/types';
 import { useRoomStore } from '../store/useRoomStore';
 
@@ -27,6 +28,7 @@ const LABEL_COLORS: Record<string, string> = {
 
 const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const toggleSocketDeactivated = useRoomStore((s) => s.toggleSocketDeactivated);
+  const updateRoom = useRoomStore((s) => s.updateRoom);
 
   const [expanded, setExpanded] = useState(false);
   const [selectedSocket, setSelectedSocket] = useState<Device | null>(null);
@@ -68,6 +70,13 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const latestEnergy = loadingKwh ? '…' : (totalKwh * 1000).toFixed(0);
 
   const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tracks the last known label per socket so we only notify on transitions
+  const prevLabelMapRef = React.useRef<Record<string, string>>({});
+  // Tracks the last anomaly key to avoid unnecessary store updates
+  const lastAnomaliesKeyRef = React.useRef<string>('');
+  // Maps socketId -> expiry timestamp (ms). Alert stays visible until expiry even if label changes.
+  const alertExpiryRef = React.useRef<Record<string, number>>({});
+  const ALERT_TTL_MS = 60_000; // 60 seconds
 
   const loadData = useCallback(async () => {
     setLoadingKwh(true);
@@ -112,7 +121,45 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
         if (result?.predicted_label_name) labelMap[s.id] = result.predicted_label_name;
       });
       if (Object.keys(labelMap).length > 0) {
+        const alertLabels = new Set(['High', 'Wasteful']);
+        socketList.forEach((s) => {
+          const newLabel = labelMap[s.id];
+          if (!newLabel || !alertLabels.has(newLabel) || s.deactivated) return;
+          // Extend (or set) the TTL every time the socket is in an alert state
+          alertExpiryRef.current[s.id] = Date.now() + ALERT_TTL_MS;
+          // Fire a local notification only on first transition into this label
+          if (prevLabelMapRef.current[s.id] === newLabel) return;
+          const kwh = kwhMap[s.id] ?? 0;
+          sendLocalAlert(
+            `⚠ ${newLabel} Usage – ${room.name}`,
+            `Socket ${s.id} is drawing ${(kwh * 1000).toFixed(1)} W (${newLabel.toLowerCase()})`,
+          ).catch(() => {});
+        });
+
+        Object.assign(prevLabelMapRef.current, labelMap);
         setSocketLabelMap((prev) => ({ ...prev, ...labelMap }));
+      }
+
+      // Derive room anomalies: currently High/Wasteful OR still within TTL window
+      const now = Date.now();
+      const alertSockets = socketList.filter((s) => {
+        if (s.deactivated) return false;
+        const label = prevLabelMapRef.current[s.id];
+        const isActiveAlert = label === 'High' || label === 'Wasteful';
+        const isSticky = (alertExpiryRef.current[s.id] ?? 0) > now;
+        return isActiveAlert || isSticky;
+      });
+      const newAnomalies = alertSockets.map((s) => {
+        const label = prevLabelMapRef.current[s.id];
+        const kwh = kwhMap[s.id] ?? 0;
+        // Show remaining TTL in seconds when the label has already cleared
+        const alertLabel = (label === 'High' || label === 'Wasteful') ? label : 'Resolved';
+        return `${s.id}: ${alertLabel} usage (${(kwh * 1000).toFixed(1)} W)`;
+      });
+      const anomalyKey = newAnomalies.join('|');
+      if (anomalyKey !== lastAnomaliesKeyRef.current) {
+        lastAnomaliesKeyRef.current = anomalyKey;
+        updateRoom({ ...room, analytics: { ...room.analytics, anomalies: newAnomalies } });
       }
 
       const tickTime = new Date(tick.timestamp).getTime();
@@ -130,11 +177,11 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
     } catch (err) {
       // Silent catch
     }
-  }, [room.id, room.devices]);
+  }, [room.id, room.devices, room.name, room.analytics, updateRoom]);
 
   useEffect(() => {
     loadData().then(() => {
-      pollTimerRef.current = setInterval(pollRealtime, 5000);
+      pollTimerRef.current = setInterval(pollRealtime, 2000);
     });
 
     return () => {
