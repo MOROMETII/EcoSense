@@ -331,8 +331,6 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
     setDevices((prev) => [...prev, newDevice]);
   };
 
-  // ── Save ──────────────────────────────────────────────────────────────────
-
   const handleSave = () => {
     const name = roomName.trim();
     if (!name) { Alert.alert('Name Required', 'Please enter a room name.'); return; }
@@ -340,7 +338,7 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
       updateRoom({ ...existingRoom, name, devices, blueprint });
     } else {
       addRoom({
-        id: String(Date.now()),
+        id: `ROOM_${String(101 + rooms.length).padStart(3, '0')}`,
         name,
         devices,
         blueprint,

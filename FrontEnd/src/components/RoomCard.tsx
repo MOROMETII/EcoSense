@@ -6,7 +6,7 @@ import { useTheme } from 'react-native-paper';
 
 import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
-import { fetchRoomBulkData, fetchRoomRealtime } from '../services/socketPredictionService';
+import { fetchRoomBulkData, fetchRoomRealtime, fetchSocketRealtime } from '../services/socketPredictionService';
 import type { Room, Device, DataPoint } from '../models/types';
 import { useRoomStore } from '../store/useRoomStore';
 
@@ -18,6 +18,13 @@ interface Props {
 const ANOMALY_COLOR = '#EF4444';
 const ENERGY_COLOR = '#F59E0B';
 
+const LABEL_COLORS: Record<string, string> = {
+  Low: '#10B981',
+  Normal: '#3B82F6',
+  High: '#F59E0B',
+  Wasteful: '#EF4444',
+};
+
 const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const toggleSocketDeactivated = useRoomStore((s) => s.toggleSocketDeactivated);
 
@@ -25,6 +32,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const [selectedSocket, setSelectedSocket] = useState<Device | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [socketKwhMap, setSocketKwhMap] = useState<Record<string, number>>({});
+  const [socketLabelMap, setSocketLabelMap] = useState<Record<string, string>>({});
   const [loadingKwh, setLoadingKwh] = useState(false);
   const [tempData, setTempData] = useState<DataPoint[]>([]);
   const [energyData, setEnergyData] = useState<DataPoint[]>([]);
@@ -88,10 +96,24 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
 
   const pollRealtime = useCallback(async () => {
     try {
-      const tick = await fetchRoomRealtime(room.id);
+      const socketList = room.devices.filter((d) => d.type === 'smart_socket');
+      const [tick, ...labelResults] = await Promise.all([
+        fetchRoomRealtime(room.id),
+        ...socketList.map((s) => fetchSocketRealtime(s.id, room.id).catch(() => null)),
+      ]);
+
       const kwhMap: Record<string, number> = {};
       tick.sockets.forEach((s: any) => { kwhMap[s.socket_id] = s.kwh; });
       setSocketKwhMap(kwhMap);
+
+      const labelMap: Record<string, string> = {};
+      socketList.forEach((s, i) => {
+        const result = labelResults[i];
+        if (result?.predicted_label_name) labelMap[s.id] = result.predicted_label_name;
+      });
+      if (Object.keys(labelMap).length > 0) {
+        setSocketLabelMap((prev) => ({ ...prev, ...labelMap }));
+      }
 
       const tickTime = new Date(tick.timestamp).getTime();
 
@@ -108,7 +130,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
     } catch (err) {
       // Silent catch
     }
-  }, [room.id]);
+  }, [room.id, room.devices]);
 
   useEffect(() => {
     loadData().then(() => {
@@ -216,15 +238,29 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
                         onPress={() => handleSocketPress(socket)}
                         style={[
                           styles.socketCard,
-                          { backgroundColor: colors.surfaceVariant },
+                          {
+                            backgroundColor: !socket.deactivated && socketLabelMap[socket.id]
+                              ? LABEL_COLORS[socketLabelMap[socket.id]] + '22'
+                              : colors.surfaceVariant,
+                            borderWidth: !socket.deactivated && socketLabelMap[socket.id] ? 1 : 0,
+                            borderColor: !socket.deactivated && socketLabelMap[socket.id]
+                              ? LABEL_COLORS[socketLabelMap[socket.id]] + '66'
+                              : 'transparent',
+                          },
                           socket.deactivated && { opacity: 0.45 },
                         ]}
                         activeOpacity={0.7}
                       >
                         <MaterialCommunityIcons
                           name={socket.deactivated ? 'power-off' : 'power-socket-eu'}
-                          size={24}
-                          color={socket.deactivated ? colors.outline : colors.primary}
+                          size={20}
+                          color={
+                            socket.deactivated
+                              ? colors.outline
+                              : (socketLabelMap[socket.id]
+                                  ? LABEL_COLORS[socketLabelMap[socket.id]]
+                                  : colors.primary)
+                          }
                         />
                         <Text variant="bodySmall" style={{ fontWeight: '600', color: colors.onSurface, marginTop: 6, textAlign: 'center' }}>
                           {socket.id}
@@ -287,7 +323,7 @@ const styles = StyleSheet.create({
   chartBlock: { flex: 1, gap: 4 },
   section: { marginTop: 12 },
   socketsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  socketCard: { flex: 1, minWidth: '45%', paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, alignItems: 'center', position: 'relative' },
+  socketCard: { flex: 1, minWidth: '25%', paddingHorizontal: 6, paddingVertical: 6, borderRadius: 12, alignItems: 'center', position: 'relative' },
   socketArrow: { position: 'absolute', top: 8, right: 8 },
   chip: { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 6 },
 });
