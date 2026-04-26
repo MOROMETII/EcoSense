@@ -144,7 +144,13 @@ def post_object(room_id: int):
     is_open = data.get("is_open", False)
     if not obj_type or not wall_side or wall_offset is None:
         return {"error": "type, wall_side and wall_offset are required"}, 400
-    return add_object(room_id, request.user_id, obj_type, wall_side, wall_offset, is_open)
+    # DB has a CHECK constraint on object.type; normalize + validate early.
+    type_raw = str(obj_type).strip()
+    type_norm = type_raw.lower()
+    obj_type_db = {"door": "DOOR", "window": "WINDOW"}.get(type_norm, type_raw)
+    if obj_type_db not in {"DOOR", "WINDOW"}:
+        return {"error": "Invalid type. Allowed: door, window"}, 400
+    return add_object(room_id, request.user_id, obj_type_db, wall_side, wall_offset, is_open)
 
 @bp.route("/rooms/<int:room_id>/objects", methods=["GET"])
 @jwt_required

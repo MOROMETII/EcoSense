@@ -252,6 +252,11 @@ def delete_thermostat(thermostat_id: int, user_id: int):
 # ── OBJECTS ───────────────────────────────────────────────
 
 def add_object(room_id: int, user_id: int, obj_type: str, wall_side: str, wall_offset: float, is_open: bool):
+    # Normalize to match DB CHECK constraints (defensive in case callers bypass router).
+    if obj_type is not None:
+        obj_type_raw = str(obj_type).strip()
+        obj_type_norm = obj_type_raw.lower()
+        obj_type = {"door": "DOOR", "window": "WINDOW"}.get(obj_type_norm, obj_type_raw)
     db = get_db()
     cursor = db.cursor()
     if not _room_belongs_to_user(room_id, user_id, cursor):
