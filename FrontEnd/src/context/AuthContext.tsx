@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Device from 'expo-device';
 import { logoutApi } from '../services/authApi';
 import type { User } from '../models/types';
 
@@ -24,7 +23,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
-        if (raw) setUser(JSON.parse(raw) as User);
+        if (raw) {
+          const parsed = JSON.parse(raw) as User;
+          // Discard stale sessions that used the old hardcoded placeholder token
+          if (parsed.token === 'server-token') {
+            AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+          } else {
+            setUser(parsed);
+          }
+        }
       })
       .catch(() => {/* ignore read errors */})
       .finally(() => setIsLoading(false));
@@ -43,8 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async (): Promise<{ ok: boolean; message?: string }> => {
     if (!user) return { ok: true };
-    const deviceName = Device.deviceName ?? 'Unknown Device';
-    const result = await logoutApi(user.name, deviceName, user.token);
+    const result = await logoutApi(user.name, user.token);
     if (!result.ok) return result;          // abort — keep user logged in
     setUser(null);
     await AsyncStorage.removeItem(STORAGE_KEY);

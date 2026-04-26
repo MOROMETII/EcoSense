@@ -1,5 +1,8 @@
 import type { Analytics } from '../models/types';
 
+export const BASE_URL = "https://linked-towns-pioneer-established.trycloudflare.com"
+
+
 export interface AIAnalysis {
   anomalies: string[];
   suggestions: string[];
@@ -17,7 +20,7 @@ export const analyzeRoom = async (
   // TODO: replace with real API call
   // const res = await fetch('/ai/analyze-room', {
   //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
+    // headers: { 'Content-Type': 'application/json' },
   //   body: JSON.stringify({ roomId, analytics }),
   // });
   // return res.json();

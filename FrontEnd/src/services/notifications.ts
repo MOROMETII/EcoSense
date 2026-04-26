@@ -2,8 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-
-const BASE_URL = 'https://voluntary-distributor-meaningful-api.trycloudflare.com';
+import { BASE_URL } from "./aiService";
 
 // Show notifications while the app is in the foreground.
 Notifications.setNotificationHandler({

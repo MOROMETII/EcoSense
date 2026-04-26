@@ -8,6 +8,8 @@ import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
 import { fetchRoomBulkData, fetchRoomRealtime, fetchSocketRealtime } from '../services/socketPredictionService';
 import { sendLocalAlert } from '../services/notifications';
+import { patchThermostat } from '../services/roomsApi';
+import { useAuth } from '../context/AuthContext';
 import type { Room, Device, DataPoint } from '../models/types';
 import { useRoomStore } from '../store/useRoomStore';
 
@@ -29,6 +31,7 @@ const LABEL_COLORS: Record<string, string> = {
 const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const toggleSocketDeactivated = useRoomStore((s) => s.toggleSocketDeactivated);
   const updateRoom = useRoomStore((s) => s.updateRoom);
+  const { user } = useAuth();
 
   const [expanded, setExpanded] = useState(false);
   const [selectedSocket, setSelectedSocket] = useState<Device | null>(null);
@@ -38,6 +41,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const [loadingKwh, setLoadingKwh] = useState(false);
   const [tempData, setTempData] = useState<DataPoint[]>([]);
   const [energyData, setEnergyData] = useState<DataPoint[]>([]);
+  const [thermostatToggling, setThermostatToggling] = useState(false);
   const { colors } = useTheme();
 
   const hasAnomalies = room.analytics.anomalies.length > 0;
@@ -58,27 +62,27 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const latestTemp = latestTempRaw != null ? Number(latestTempRaw).toFixed(2) : '—';
 
   const sockets = room.devices.filter((d) => d.type === 'smart_socket');
-  // Only active sockets contribute to the power average
   const totalKwh = sockets
     .filter((s) => !s.deactivated)
     .reduce((sum, s) => sum + (socketKwhMap[s.id] ?? 0), 0);
 
-  // Derive the live deactivated flag from the store (not from selectedSocket snapshot)
+
   const isSelectedSocketDeactivated = selectedSocket
     ? (room.devices.find((d) => d.id === selectedSocket.id)?.deactivated ?? false)
     : false;
   const latestEnergy = loadingKwh ? '…' : (totalKwh * 1000).toFixed(0);
 
   const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  // Tracks the last known label per socket so we only notify on transitions
   const prevLabelMapRef = React.useRef<Record<string, string>>({});
-  // Tracks the last anomaly key to avoid unnecessary store updates
   const lastAnomaliesKeyRef = React.useRef<string>('');
-  // Maps socketId -> expiry timestamp (ms). Alert stays visible until expiry even if label changes.
   const alertExpiryRef = React.useRef<Record<string, number>>({});
+  // Tracks sockets for which we have already sent a notification for a given label
+  // key: `${socketId}:${label}` — cleared when the socket is deactivated
+  const notifiedRef = React.useRef<Set<string>>(new Set());
   const ALERT_TTL_MS = 60_000; // 60 seconds
 
   const loadData = useCallback(async () => {
+    if (room.id !== "3") return;
     setLoadingKwh(true);
     try {
       const data = await fetchRoomBulkData(room.id);
@@ -104,6 +108,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   }, [room.id]);
 
   const pollRealtime = useCallback(async () => {
+    if (room.id !== '3') return;
     try {
       const socketList = room.devices.filter((d) => d.type === 'smart_socket');
       const [tick, ...labelResults] = await Promise.all([
@@ -125,10 +130,11 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
         socketList.forEach((s) => {
           const newLabel = labelMap[s.id];
           if (!newLabel || !alertLabels.has(newLabel) || s.deactivated) return;
-          // Extend (or set) the TTL every time the socket is in an alert state
           alertExpiryRef.current[s.id] = Date.now() + ALERT_TTL_MS;
-          // Fire a local notification only on first transition into this label
-          if (prevLabelMapRef.current[s.id] === newLabel) return;
+          // Only notify once per socket+label combination
+          const notifyKey = `${s.id}:${newLabel}`;
+          if (notifiedRef.current.has(notifyKey)) return;
+          notifiedRef.current.add(notifyKey);
           const kwh = kwhMap[s.id] ?? 0;
           sendLocalAlert(
             `⚠ ${newLabel} Usage – ${room.name}`,
@@ -140,8 +146,19 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
         setSocketLabelMap((prev) => ({ ...prev, ...labelMap }));
       }
 
-      // Derive room anomalies: currently High/Wasteful OR still within TTL window
       const now = Date.now();
+      // A deactivated socket immediately clears its alert and expiry
+      socketList.forEach((s) => {
+        if (s.deactivated) {
+          delete alertExpiryRef.current[s.id];
+          delete prevLabelMapRef.current[s.id];
+          // Clear notified keys for this socket so it notifies again if reactivated and high
+          notifiedRef.current.forEach((key) => {
+            if (key.startsWith(`${s.id}:`)) notifiedRef.current.delete(key);
+          });
+        }
+      });
+
       const alertSockets = socketList.filter((s) => {
         if (s.deactivated) return false;
         const label = prevLabelMapRef.current[s.id];
@@ -152,7 +169,7 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
       const newAnomalies = alertSockets.map((s) => {
         const label = prevLabelMapRef.current[s.id];
         const kwh = kwhMap[s.id] ?? 0;
-        // Show remaining TTL in seconds when the label has already cleared
+        
         const alertLabel = (label === 'High' || label === 'Wasteful') ? label : 'Resolved';
         return `${s.id}: ${alertLabel} usage (${(kwh * 1000).toFixed(1)} W)`;
       });
@@ -175,25 +192,49 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
       });
 
     } catch (err) {
-      // Silent catch
     }
   }, [room.id, room.devices, room.name, room.analytics, updateRoom]);
 
   useEffect(() => {
     loadData().then(() => {
-      pollTimerRef.current = setInterval(pollRealtime, 2000);
+      pollTimerRef.current = setInterval(pollRealtime, 5000);
     });
 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, [loadData, pollRealtime, refreshKey]);
-
-  // REMOVED: The 30-second static loadData interval that was wiping out your realtime cursor.
-
   const handleSocketPress = (socket: Device) => {
     setSelectedSocket(socket);
     setModalVisible(true);
+  };
+
+  const thermostat = room.devices.find((d) => d.type === 'temperature_sensor');
+  const thermostatOnline = thermostat ? !thermostat.deactivated : null;
+
+  const handleThermostatToggle = () => {
+    if (!thermostat?.serverId || !user?.token || thermostatToggling) return;
+    const nextOnline = !thermostatOnline;
+    // Optimistic update — UI responds immediately
+    updateRoom({
+      ...room,
+      devices: room.devices.map((d) =>
+        d.id === thermostat.id ? { ...d, deactivated: !nextOnline } : d,
+      ),
+    });
+    setThermostatToggling(true);
+    patchThermostat(thermostat.serverId, nextOnline, user.token)
+      .catch((e) => {
+        console.error('Thermostat toggle failed:', e);
+        // Revert on failure
+        updateRoom({
+          ...room,
+          devices: room.devices.map((d) =>
+            d.id === thermostat.id ? { ...d, deactivated: thermostatOnline === false } : d,
+          ),
+        });
+      })
+      .finally(() => setThermostatToggling(false));
   };
 
   const getSocketKwh = (socketId: string) => socketKwhMap[socketId] ?? 0;
@@ -322,6 +363,58 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
                 </View>
               )}
 
+              {/* Thermostat */}
+              {thermostat && (
+                <View style={styles.section}>
+                  <Text variant="labelSmall" style={{ color: colors.secondary, marginBottom: 8, letterSpacing: 0.6 }}>
+                    THERMOSTAT
+                  </Text>
+                  <View style={[
+                    styles.chip,
+                    {
+                      backgroundColor: thermostatOnline ? colors.secondaryContainer : colors.surfaceVariant,
+                      borderColor: thermostatOnline ? colors.secondary + '55' : colors.outline + '33',
+                      justifyContent: 'space-between',
+                    },
+                  ]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <MaterialCommunityIcons
+                        name="thermometer"
+                        size={18}
+                        color={thermostatOnline ? colors.secondary : colors.outline}
+                      />
+                      <View>
+                        <Text variant="bodySmall" style={{ fontWeight: '600', color: colors.onSurface }}>
+                          {thermostat.id}
+                        </Text>
+                        <Text variant="labelSmall" style={{ color: thermostatOnline ? colors.secondary : colors.outline }}>
+                          {thermostatOnline ? 'Online' : 'Offline'}
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleThermostatToggle}
+                      disabled={thermostatToggling || !thermostat.serverId}
+                      style={[
+                        styles.thermostatToggle,
+                        {
+                          backgroundColor: thermostatOnline
+                            ? colors.secondary
+                            : colors.outline + '33',
+                          opacity: thermostatToggling ? 0.5 : 1,
+                        },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name={thermostatOnline ? 'power' : 'power-off'}
+                        size={18}
+                        color={thermostatOnline ? colors.onSecondary : colors.outline}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {/* Anomalies */}
               {room.analytics.anomalies.length > 0 && (
                 <View style={styles.section}>
@@ -373,6 +466,7 @@ const styles = StyleSheet.create({
   socketCard: { flex: 1, minWidth: '25%', paddingHorizontal: 6, paddingVertical: 6, borderRadius: 12, alignItems: 'center', position: 'relative' },
   socketArrow: { position: 'absolute', top: 8, right: 8 },
   chip: { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 6 },
+  thermostatToggle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
 });
 
 export default RoomCard;

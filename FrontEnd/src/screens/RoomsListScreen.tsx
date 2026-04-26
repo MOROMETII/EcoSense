@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FlatList, View, StyleSheet, TouchableOpacity } from 'react-native';
-import { Text, FAB, Surface } from 'react-native-paper';
+import { Text, FAB, Surface, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from 'react-native-paper';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import ScreenWrapper from '../components/ScreenWrapper';
 import DeleteModal from '../components/DeleteModal';
 import BlueprintBackground from '../components/BlueprintBackground';
 import { useRoomStore } from '../store/useRoomStore';
+import { useAuth } from '../context/AuthContext';
 import type { Room } from '../models/types';
 
 const GRID_SIZE = 12;
@@ -155,9 +156,18 @@ const RoomRow: React.FC<RowProps> = ({ room, onEdit, onDelete }) => {
 
 const RoomsListScreen: React.FC<Props> = ({ navigation }) => {
   const { colors } = useTheme();
-  const rooms      = useRoomStore((s) => s.rooms);
-  const deleteRoom = useRoomStore((s) => s.deleteRoom);
+  const rooms        = useRoomStore((s) => s.rooms);
+  const loading      = useRoomStore((s) => s.loading);
+  const deleteRoom   = useRoomStore((s) => s.deleteRoom);
+  const fetchRooms   = useRoomStore((s) => s.fetchRooms);
+  const { user }     = useAuth();
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+
+  const load = useCallback(() => {
+    if (user?.token) fetchRooms(user.token);
+  }, [user?.token, fetchRooms]);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <ScreenWrapper>
@@ -169,6 +179,14 @@ const RoomsListScreen: React.FC<Props> = ({ navigation }) => {
             {rooms.length} room{rooms.length !== 1 ? 's' : ''} configured
           </Text>
         </View>
+        {loading
+          ? <ActivityIndicator size="small" color={colors.primary} />
+          : (
+            <TouchableOpacity onPress={load}>
+              <MaterialCommunityIcons name="refresh" size={22} color={colors.outline} />
+            </TouchableOpacity>
+          )
+        }
       </View>
 
       <FlatList
@@ -214,7 +232,7 @@ const RoomsListScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  header:  { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  header:  { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   heading: { fontWeight: '700' },
   list:    { paddingHorizontal: 16, paddingBottom: 100 },
   emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 32 },

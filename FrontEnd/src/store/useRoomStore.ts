@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Room, DataPoint } from "../models/types";
+import { fetchAllRooms } from "../services/roomsApi";
 
 const now = Date.now();
 
@@ -11,7 +12,7 @@ const pts = (base: number, noise: number, count = 12): DataPoint[] =>
 
 const MOCK_ROOMS: Room[] = [
   {
-    id: "ROOM_101",
+    id: "3",
     name: "Office A",
     devices: [
       {
@@ -45,6 +46,8 @@ const MOCK_ROOMS: Room[] = [
 
 interface RoomStore {
   rooms: Room[];
+  loading: boolean;
+  fetchRooms: (token: string) => Promise<void>;
   addRoom: (room: Room) => void;
   updateRoom: (room: Room) => void;
   deleteRoom: (id: string) => void;
@@ -53,6 +56,34 @@ interface RoomStore {
 
 export const useRoomStore = create<RoomStore>((set) => ({
   rooms: MOCK_ROOMS,
+  loading: false,
+  fetchRooms: async (token) => {
+    set({ loading: true });
+    try {
+      const fetched = await fetchAllRooms(token);
+      set((s) => ({
+        loading: false,
+        rooms: fetched.map((incoming) => {
+          // Preserve deactivated flags that the user set locally
+          const existing = s.rooms.find((r) => r.id === incoming.id);
+          if (!existing) return incoming;
+          const deactivatedMap: Record<string, boolean> = {};
+          existing.devices.forEach((d) => {
+            if (d.deactivated) deactivatedMap[d.id] = true;
+          });
+          return {
+            ...incoming,
+            devices: incoming.devices.map((d) =>
+              deactivatedMap[d.id] ? { ...d, deactivated: true } : d,
+            ),
+          };
+        }),
+      }));
+    } catch (e) {
+      console.error('[RoomStore] fetchRooms failed:', e);
+      set({ loading: false });
+    }
+  },
   addRoom: (room) => set((s) => ({ rooms: [...s.rooms, room] })),
   updateRoom: (room) =>
     set((s) => ({ rooms: s.rooms.map((r) => (r.id === room.id ? room : r)) })),
