@@ -138,12 +138,19 @@ def post_object(room_id: int):
     data = request.get_json()
     if not data:
         return {"error": "Invalid JSON body"}, 400
-    obj_type = data.get("type")
-    wall_side = data.get("wall_side")
+
+    obj_type    = (data.get("type") or "").upper()
+    wall_side   = (data.get("wall_side") or "").lower()
     wall_offset = data.get("wall_offset")
-    is_open = data.get("is_open", False)
-    if not obj_type or not wall_side or wall_offset is None:
-        return {"error": "type, wall_side and wall_offset are required"}, 400
+    is_open     = data.get("is_open", False)
+
+    if obj_type not in ("DOOR", "WINDOW"):
+        return {"error": "type must be DOOR or WINDOW"}, 400
+    if wall_side not in ("top", "bottom", "left", "right"):
+        return {"error": "wall_side must be top, bottom, left or right"}, 400
+    if wall_offset is None:
+        return {"error": "wall_offset is required"}, 400
+
     return add_object(room_id, request.user_id, obj_type, wall_side, wall_offset, is_open)
 
 @bp.route("/rooms/<int:room_id>/objects", methods=["GET"])

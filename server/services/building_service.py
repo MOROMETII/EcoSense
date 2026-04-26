@@ -263,13 +263,8 @@ def add_object(room_id: int, user_id: int, obj_type: str, wall_side: str, wall_o
         INSERT INTO object (room_id, type, wall_side, wall_offset, is_open)
         VALUES (%s, %s, %s, %s, %s) RETURNING id
         """,
-        (room_id, obj_type, wall_side, wall_offset, is_open)
+        (room_id, obj_type.upper(), wall_side.lower(), wall_offset, is_open)
     )
-    object_id = cursor.fetchone()["id"]
-    db.commit()
-    cursor.close()
-    db.close()
-    return {"status": "ok", "object_id": object_id}, 201
 
 def get_room_objects(room_id: int, user_id: int):
     db = get_db()
