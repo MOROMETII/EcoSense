@@ -1,6 +1,6 @@
 import type { SocketPrediction } from "../models/types";
 
-const BASE_URL = "https://botryose-unshadily-wynell.ngrok-free.dev";
+const BASE_URL = "https://voluntary-distributor-meaningful-api.trycloudflare.com";
 
 export async function fetchSocketHistory(socketId: string, roomId: string) {
   const url = `${BASE_URL}/socket-history/${encodeURIComponent(socketId)}?room_id=${encodeURIComponent(roomId)}&hours=24`;

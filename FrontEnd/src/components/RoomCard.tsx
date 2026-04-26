@@ -8,6 +8,7 @@ import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
 import { fetchRoomBulkData, fetchRoomRealtime } from '../services/socketPredictionService';
 import type { Room, Device, DataPoint } from '../models/types';
+import { useRoomStore } from '../store/useRoomStore';
 
 interface Props {
   room: Room;
@@ -18,6 +19,8 @@ const ANOMALY_COLOR = '#EF4444';
 const ENERGY_COLOR = '#F59E0B';
 
 const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
+  const toggleSocketDeactivated = useRoomStore((s) => s.toggleSocketDeactivated);
+
   const [expanded, setExpanded] = useState(false);
   const [selectedSocket, setSelectedSocket] = useState<Device | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -45,7 +48,15 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const latestTemp = latestTempRaw != null ? Number(latestTempRaw).toFixed(2) : '—';
 
   const sockets = room.devices.filter((d) => d.type === 'smart_socket');
-  const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
+  // Only active sockets contribute to the power average
+  const totalKwh = sockets
+    .filter((s) => !s.deactivated)
+    .reduce((sum, s) => sum + (socketKwhMap[s.id] ?? 0), 0);
+
+  // Derive the live deactivated flag from the store (not from selectedSocket snapshot)
+  const isSelectedSocketDeactivated = selectedSocket
+    ? (room.devices.find((d) => d.id === selectedSocket.id)?.deactivated ?? false)
+    : false;
   const latestEnergy = loadingKwh ? '…' : (totalKwh * 1000).toFixed(0);
 
   const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
@@ -203,15 +214,23 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
                       <TouchableOpacity
                         key={socket.id}
                         onPress={() => handleSocketPress(socket)}
-                        style={[styles.socketCard, { backgroundColor: colors.surfaceVariant }]}
+                        style={[
+                          styles.socketCard,
+                          { backgroundColor: colors.surfaceVariant },
+                          socket.deactivated && { opacity: 0.45 },
+                        ]}
                         activeOpacity={0.7}
                       >
-                        <MaterialCommunityIcons name="power-socket-eu" size={24} color={colors.primary} />
+                        <MaterialCommunityIcons
+                          name={socket.deactivated ? 'power-off' : 'power-socket-eu'}
+                          size={24}
+                          color={socket.deactivated ? colors.outline : colors.primary}
+                        />
                         <Text variant="bodySmall" style={{ fontWeight: '600', color: colors.onSurface, marginTop: 6, textAlign: 'center' }}>
                           {socket.id}
                         </Text>
                         <Text variant="labelSmall" style={{ color: colors.outline, marginTop: 2 }}>
-                          {(getSocketKwh(socket.id) * 1000).toFixed(1)} W
+                          {socket.deactivated ? 'Deactivated' : `${(getSocketKwh(socket.id) * 1000).toFixed(1)} W`}
                         </Text>
                         <MaterialCommunityIcons name="chevron-right" size={18} color={colors.outline} style={styles.socketArrow} />
                       </TouchableOpacity>
@@ -243,6 +262,10 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
         visible={modalVisible}
         socket={selectedSocket}
         roomId={room.id}
+        isDeactivated={isSelectedSocketDeactivated}
+        onToggleDeactivated={() =>
+          selectedSocket && toggleSocketDeactivated(room.id, selectedSocket.id)
+        }
         onClose={() => { setModalVisible(false); setSelectedSocket(null); }}
       />
     </>
