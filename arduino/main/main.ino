@@ -7,14 +7,14 @@
 
 // ---------------- WIFI ----------------
 const char* ssid = "Luca’s iPhone";
-const char* password = "649164926";
+const char* password = "64916492";
 
 // ---------------- BACKEND (HTTPS) ----------------
 const char* postUrl =
-"https://voluntary-distributor-meaningful-api.trycloudflare.com/data/thermostat";
+"https://linked-towns-pioneer-established.trycloudflare.com/data/thermostat";
 
 const char* statusUrl =
-"https://voluntary-distributor-meaningful-api.trycloudflare.com/thermostat/1/status";
+"https://linked-towns-pioneer-established.trycloudflare.com/thermostat/2/status";
 
 // ---------------- DHT ----------------
 #define DHTPIN 14
@@ -89,7 +89,6 @@ void syncTime() {
 // ---------------- SEND SENSOR DATA ----------------
 void sendData() {
 
-  if (!deviceOnline) return;
   if (WiFi.status() != WL_CONNECTED) return;
 
   float temp = dht.readTemperature();
@@ -118,7 +117,7 @@ void sendData() {
   http.addHeader("Content-Type", "application/json");
 
   String json = "{";
-  json += "\"thermostat_id\":1,";
+  json += "\"thermostat_id\":2,";
   json += "\"temp_ambient\":" + String(temp, 2) + ",";
   json += "\"humidity\":" + String(hum, 2);
   json += "}";
@@ -164,9 +163,15 @@ void checkStatus() {
   if (code == 200) {
 
     String payload = http.getString();
+    payload.trim();
+
     Serial.println("Status: " + payload);
 
-    deviceOnline = (payload.indexOf("0") == -1);
+    if (payload.length() == 0) {
+      Serial.println("Empty payload — retaining current status");
+    } else {
+      deviceOnline = (payload.indexOf("0") == -1);
+    }
 
   } else {
     Serial.print("GET error: ");
