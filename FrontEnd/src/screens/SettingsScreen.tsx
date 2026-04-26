@@ -23,12 +23,9 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  const initials = (user?.name ?? 'U')
-    .split(' ')
-    .map((p) => p[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  const initials = (user?.username ?? 'U')
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <View style={{ flex: 1 }}>
@@ -41,12 +38,7 @@ const SettingsScreen: React.FC = () => {
       <Surface style={[styles.profileCard, { backgroundColor: colors.surface }]} elevation={1}>
         <Avatar.Text size={56} label={initials} />
         <View style={styles.profileInfo}>
-          <Text variant="titleMedium">{user?.name ?? 'User'}</Text>
-          {user?.email ? (
-            <Text variant="bodySmall" style={{ color: colors.outline }}>
-              {user.email}
-            </Text>
-          ) : null}
+          <Text variant="titleMedium">{user?.username ?? 'User'}</Text>
         </View>
       </Surface>
 

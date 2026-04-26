@@ -7,7 +7,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useAuth } from '../../context/AuthContext';
-import { registerApi } from '../../services/authApi';
+import { registerApi, loginApi } from '../../services/authApi';
 import type { AuthStackParamList } from '../../navigation/AuthNavigator';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
@@ -41,7 +41,13 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(false);
 
     if (result.ok) {
-      login('server-token', { name: username.trim(), email: email.trim() });
+      const loginResult = await loginApi(username.trim(), password);
+      if (loginResult.ok && loginResult.token) {
+        await login(loginResult.token, loginResult.user_id ?? 0, loginResult.username ?? username.trim());
+      } else {
+        // Registration succeeded but auto-login failed — go to login screen.
+        navigation.navigate('Login');
+      }
     } else {
       setErrorMsg(result.message ?? 'Registration failed.');
     }

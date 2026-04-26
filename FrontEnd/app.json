@@ -37,6 +37,9 @@
         "projectId": "cb2717a6-a3e2-4807-a6a2-9a639be78854"
       }
     },
-    "owner": "rares_bogdan"
+    "owner": "rares_bogdan",
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

@@ -1,54 +1,66 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Device from 'expo-device';
+import * as SecureStore from 'expo-secure-store';
 import { logoutApi } from '../services/authApi';
+import { setOnUnauthorized } from '../services/api';
 import type { User } from '../models/types';
-
-const STORAGE_KEY = '@auth_user';
 
 interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   user: User | null;
-  login: (token: string, userData?: Partial<Omit<User, 'token'>>) => void;
+  login: (token: string, user_id: number, username: string) => Promise<void>;
   logout: () => Promise<{ ok: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser]       = useState<User | null>(null);
+  const [user, setUser]           = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Restore session on mount
+  // Restore session on mount.
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
-        if (raw) setUser(JSON.parse(raw) as User);
-      })
-      .catch(() => {/* ignore read errors */})
-      .finally(() => setIsLoading(false));
+    const restore = async () => {
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        if (token) {
+          const rawId   = await SecureStore.getItemAsync('user_id');
+          const uname   = await SecureStore.getItemAsync('username');
+          setUser({ token, user_id: Number(rawId ?? '0'), username: uname ?? '' });
+        }
+      } catch {
+        // ignore read errors
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    restore();
   }, []);
 
-  const login = async (token: string, userData?: Partial<Omit<User, 'token'>>) => {
-    const newUser: User = {
-      id:    userData?.id    ?? '1',
-      name:  userData?.name  ?? 'User',
-      email: userData?.email ?? '',
-      token,
-    };
-    setUser(newUser);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
+  // Register the 401 handler so the api interceptor can clear React state.
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setUser(null);
+    });
+  }, []);
+
+  const login = async (token: string, user_id: number, username: string): Promise<void> => {
+    await SecureStore.setItemAsync('token', token);
+    await SecureStore.setItemAsync('user_id', String(user_id));
+    await SecureStore.setItemAsync('username', username);
+    setUser({ token, user_id, username });
   };
 
   const logout = async (): Promise<{ ok: boolean; message?: string }> => {
     if (!user) return { ok: true };
-    const deviceName = Device.deviceName ?? 'Unknown Device';
-    const result = await logoutApi(user.name, deviceName, user.token);
-    if (!result.ok) return result;          // abort — keep user logged in
+    // Fire logout request but always clear local state regardless of outcome.
+    const result = await logoutApi(user.token);
     setUser(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
-    return { ok: true };
+    await SecureStore.deleteItemAsync('token');
+    await SecureStore.deleteItemAsync('user_id');
+    await SecureStore.deleteItemAsync('username');
+    await SecureStore.deleteItemAsync('device_id');
+    return result;
   };
 
   return (

@@ -22,7 +22,7 @@ const ThemedApp: React.FC = () => {
     if (!isAuthenticated || !user) return;
 
     // Register device token after login/register is fully complete — user is in DB by this point.
-    registerForPushNotifications(user.name);
+    registerForPushNotifications(user.username);
 
     // Listen for incoming notifications while app is foregrounded.
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {

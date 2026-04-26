@@ -2,8 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-
-const BASE_URL = 'https://botryose-unshadily-wynell.ngrok-free.dev';
+import api from './api';
 
 // Show notifications while the app is in the foreground.
 Notifications.setNotificationHandler({
@@ -65,16 +64,8 @@ export async function registerForPushNotifications(username: string): Promise<vo
     const deviceName = (rawName && rawName.toLowerCase() !== 'none')
       ? rawName
       : (Device.modelName ?? 'Unknown Device');
-    const payload = { "token":token, "deviceName":deviceName, "username":username };
-    const res = await fetch(`${BASE_URL}/register-token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json().catch(() => null);
+    const payload = { "token": token, "deviceName": deviceName, "username": username };
+    await api.post('/register-token', payload);
   } catch (e) {
   }
 }

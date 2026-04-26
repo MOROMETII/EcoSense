@@ -1,34 +1,61 @@
-import type { SocketPrediction } from "../models/types";
-
-const BASE_URL = "https://botryose-unshadily-wynell.ngrok-free.dev";
+import api from './api';
 
 export async function fetchSocketHistory(socketId: string, roomId: string) {
-  const url = `${BASE_URL}/socket-history/${encodeURIComponent(socketId)}?room_id=${encodeURIComponent(roomId)}&hours=24`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `HTTP ${res.status}`);
-  }
-  return res.json();
+  const res = await api.get(`/socket-history/${encodeURIComponent(socketId)}`, {
+    params: { room_id: roomId, hours: 24 },
+  });
+  return res.data;
 }
 
 export async function fetchRoomBulkData(roomId: string) {
-  const url = `${BASE_URL}/room-data/${encodeURIComponent(roomId)}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+  // 1. Get thermostats for this room, then fetch history for the first one.
+  const thermRes = await api.get(`/rooms/${roomId}/thermostats`);
+  const thermostats: Array<{ id: number }> = thermRes.data.thermostats ?? [];
+
+  let temp_history: Array<{ timestamp: string; temp_ambient: number }> = [];
+  if (thermostats.length > 0) {
+    const histRes = await api.get(`/data/thermostat/${thermostats[0].id}`, {
+      params: { hours: 24 },
+    });
+    temp_history = (histRes.data.history ?? []).map((h: any) => ({
+      timestamp: h.ts,
+      temp_ambient: h.temp_ambient,
+    }));
   }
-  return res.json();
+
+  // 2. Get sockets — no historical KWH from server, realtime polling fills these in.
+  const sockRes = await api.get(`/rooms/${roomId}/sockets`);
+  const sockets = (sockRes.data.sockets ?? []).map((s: any) => ({
+    socket_id: String(s.id),
+    kwh: 0,
+  }));
+
+  return { sockets, temp_history, energy_history: [] as any[] };
 }
+
 export async function fetchRoomRealtime(roomId: string) {
-  const url = `${BASE_URL}/room-realtime/${encodeURIComponent(roomId)}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `HTTP ${res.status}`);
-  }
-  return res.json();
+  // Get current sockets + fetch per-socket realtime predictions in parallel.
+  const sockRes = await api.get(`/rooms/${roomId}/sockets`);
+  const sockets: Array<{ id: number }> = sockRes.data.sockets ?? [];
+
+  const results = await Promise.allSettled(
+    sockets.map((s) => fetchSocketRealtime(String(s.id), roomId))
+  );
+
+  const socketKwh = results.map((r, i) => ({
+    socket_id: String(sockets[i].id),
+    kwh:
+      r.status === 'fulfilled' && r.value != null ? r.value.current_kwh : 0,
+  }));
+
+  const validTicks = results
+    .filter((r): r is PromiseFulfilledResult<RealtimeTick> => r.status === 'fulfilled' && r.value != null)
+    .map((r) => r.value);
+
+  const total_kwh = socketKwh.reduce((sum, s) => sum + s.kwh, 0);
+  const timestamp = validTicks[0]?.timestamp ?? new Date().toISOString();
+
+  return { sockets: socketKwh, timestamp, avg_temp: 0, total_kwh };
 }
 export interface RealtimeTick {
   socket_id: string;
@@ -46,20 +73,14 @@ export async function fetchSocketRealtime(
   socketId: string,
   roomId: string,
 ): Promise<RealtimeTick | null> {
-  const params = new URLSearchParams({
-    socket_id: socketId,
-    room_id: roomId,
-    loop: "true",
-    batch: "1",
-  });
-  const url = `${BASE_URL}/predict/realtime?${params}`;
-  const res = await fetch(url);
-
-  if (res.status === 202) return null;
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+  try {
+    const res = await api.get<RealtimeTick>('/predict/realtime', {
+      params: { socket_id: socketId, room_id: roomId, loop: 'true', batch: '1' },
+      validateStatus: (s) => s === 200 || s === 202,
+    });
+    if (res.status === 202) return null;
+    return res.data;
+  } catch {
+    return null;
   }
-  return res.json() as Promise<RealtimeTick>;
 }

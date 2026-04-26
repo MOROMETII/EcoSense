@@ -56,8 +56,7 @@ export interface Room {
 }
 
 export interface User {
-  id: string;
-  name: string;
-  email: string;
+  user_id: number;
+  username: string;
   token: string;
 }
