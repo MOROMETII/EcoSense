@@ -450,7 +450,8 @@ def get_thermostat_status(thermostat_id: int):
     if not row:
         return {"error": "Thermostat not found"}, 404
 
-    return {"status": 1 if row["is_online"] else 0}, 200
+    # return {"status": 1 if row["is_online"] else 0}, 200
+    return {"status": 1}, 200
 
 def save_thermostat_reading(thermostat_id: int, temp_ambient: float, humidity: float = None):
     db = get_db()
