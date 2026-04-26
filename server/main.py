@@ -450,8 +450,7 @@ def get_thermostat_status(thermostat_id: int):
     if not row:
         return {"error": "Thermostat not found"}, 404
 
-    # return {"status": 1 if row["is_online"] else 0}, 200
-    return {"status": 1}, 200
+    return {"status": 1 if row["is_online"] else 0}, 200
 
 def save_thermostat_reading(thermostat_id: int, temp_ambient: float, humidity: float = None):
     db = get_db()
@@ -490,6 +489,44 @@ def post_thermostat_data():
 
     save_thermostat_reading(thermostat_id, temp_ambient, humidity)
     return {"status": "ok"}, 200
+
+
+@app.route("/thermostat/<int:thermostat_id>/set_status",methods=["POST"])
+def set_status(thermostat_id: int):
+    data = request.get_json(force=True, silent=True) or {}
+
+    if "is_online" in data:
+        raw = data.get("is_online")
+        if not isinstance(raw, bool):
+            return {"error": "'is_online' must be a boolean"}, 400
+        is_online = 1 if raw else 0
+    elif "status" in data:
+        raw = data.get("status")
+        if raw in (0, 1):
+            is_online = int(raw)
+        elif isinstance(raw, bool):
+            is_online = 1 if raw else 0
+        else:
+            return {"error": "'status' must be 0/1 (or boolean)"}, 400
+    else:
+        return {"error": "Missing 'is_online' (bool) or 'status' (0/1) in JSON body"}, 400
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE thermostat SET is_online = ? WHERE id = ?",
+        (is_online, thermostat_id)
+    )
+    updated = cursor.rowcount
+    db.commit()
+    cursor.close()
+    db.close()
+
+    if updated == 0:
+        return {"error": "Thermostat not found"}, 404
+
+    return {"status": "ok", "thermostat_id": thermostat_id, "is_online": is_online}, 200
+
 
 @app.route("/")
 def index():
