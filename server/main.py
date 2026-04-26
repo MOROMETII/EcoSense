@@ -171,13 +171,8 @@ def login():
 def register_token():
     token = request.json.get("token")
     DeviceName = request.json.get("deviceName")
-<<<<<<< HEAD
     username = request.json.get("username")
     save_token(token, DeviceName, username)
-=======
-    username=request.json.get("username")
-    save_token(token,DeviceName,username)
->>>>>>> a76e19e5caf938e7db2634f9ee3bcf5bebb2e882
     return {"status": "ok"}
 
 @app.route("/sendall", methods=['POST'])
@@ -435,15 +430,65 @@ def get_room_realtime(room_id):
 
 @app.route("/logout", methods=["GET", "POST"])
 def logout():
-<<<<<<< HEAD
-    return {"status": "iesi afara frate"}, 200
-=======
-    token = request.json.get("token")
-    DeviceName = request.json.get("deviceName")
-    username=request.json.get("username")
-    delete_user_token(token,DeviceName,username)
+    # token = request.json.get("token")
+    # DeviceName = request.json.get("deviceName")
+    # username=request.json.get("username")
+    # delete_user_token(token,DeviceName,username)
     return {"status":"iesi afara frate"},200
->>>>>>> a76e19e5caf938e7db2634f9ee3bcf5bebb2e882
+
+def get_thermostat_status(thermostat_id: int):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+        "SELECT is_online FROM thermostat WHERE id = ?",
+        (thermostat_id,)
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    db.close()
+
+    if not row:
+        return {"error": "Thermostat not found"}, 404
+
+    return {"status": 1 if row["is_online"] else 0}, 200
+
+def save_thermostat_reading(thermostat_id: int, temp_ambient: float, humidity: float = None):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+        """
+        INSERT INTO data_thermostat (thermostat_id, temp_ambient, humidity)
+        VALUES (?, ?, ?)
+        """,
+        (thermostat_id, temp_ambient, humidity)
+    )
+    db.commit()
+    cursor.close()
+    db.close()
+    
+@app.route("/thermostat/<int:thermostat_id>/status", methods=["GET"])
+def thermostat_status(thermostat_id: int):
+    # no jwt_required — hardware can't send tokens
+    status = get_thermostat_status(thermostat_id)
+    return status
+
+
+
+@app.route("/data/thermostat", methods=["POST"])
+def post_thermostat_data():
+    data = request.get_json()
+    if not data:
+        return {"error": "Invalid JSON body"}, 400
+
+    thermostat_id = data.get("thermostat_id")
+    temp_ambient = data.get("temp_ambient")
+    humidity = data.get("humidity")
+
+    if not thermostat_id or temp_ambient is None:
+        return {"error": "thermostat_id and temp_ambient are required"}, 400
+
+    save_thermostat_reading(thermostat_id, temp_ambient, humidity)
+    return {"status": "ok"}, 200
 
 @app.route("/")
 def index():
