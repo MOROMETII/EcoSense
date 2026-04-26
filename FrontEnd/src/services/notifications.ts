@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const BASE_URL = 'https://botryose-unshadily-wynell.ngrok-free.dev';
+const BASE_URL = 'https://voluntary-distributor-meaningful-api.trycloudflare.com';
 
 // Show notifications while the app is in the foreground.
 Notifications.setNotificationHandler({
@@ -77,4 +77,15 @@ export async function registerForPushNotifications(username: string): Promise<vo
     const json = await res.json().catch(() => null);
   } catch (e) {
   }
+}
+
+/**
+ * Fires an immediate local notification (no server required).
+ * Used to alert the user when a socket enters High or Wasteful state.
+ */
+export async function sendLocalAlert(title: string, body: string): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body, sound: true },
+    trigger: null, // fire immediately
+  });
 }

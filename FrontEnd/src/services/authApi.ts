@@ -1,4 +1,4 @@
-const BASE_URL    = 'https://botryose-unshadily-wynell.ngrok-free.dev';
+const BASE_URL    = 'https://voluntary-distributor-meaningful-api.trycloudflare.com';
 const TIMEOUT_MS  = 8000;
 
 export interface ApiResult {

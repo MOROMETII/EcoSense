@@ -8,6 +8,7 @@ import {
     ActivityIndicator,
     Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, Surface, Chip } from 'react-native-paper';
 import { useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -21,6 +22,8 @@ interface SocketDetailsModalProps {
     socket: Device | null;
     roomId: string;
     onClose: () => void;
+    isDeactivated: boolean;
+    onToggleDeactivated: () => void;
 }
 
 const LABEL_COLORS: Record<string, string> = {
@@ -43,8 +46,11 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
     socket,
     roomId,
     onClose,
+    isDeactivated,
+    onToggleDeactivated,
 }) => {
     const { colors } = useTheme();
+    const insets = useSafeAreaInsets();
 
     // Snapshot loaded once on open — provides the full history list + initial label
     const [snapshot, setSnapshot] = useState<SocketPrediction | null>(null);
@@ -128,7 +134,7 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     useEffect(() => {
-        if (visible && socket?.type === 'smart_socket') {
+        if (visible && socket?.type === 'smart_socket' && !isDeactivated) {
             // Reset state for a fresh open
             setSnapshot(null);
             setLiveKwh(null);
@@ -141,6 +147,10 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
 
             // Start polling
             pollTimerRef.current = setInterval(pollRealtime, POLL_INTERVAL_MS);
+        } else if (pollTimerRef.current) {
+            // Socket is deactivated or modal closed — stop polling
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
         }
 
         return () => {
@@ -149,7 +159,7 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
                 pollTimerRef.current = null;
             }
         };
-    }, [visible, socket]);
+    }, [visible, socket, isDeactivated]);
 
     // ── Manual refresh — reload snapshot AND reset poll cursor ───────────────
 
@@ -179,7 +189,7 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
             presentationStyle='fullScreen'
             onRequestClose={onClose}
         >
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
 
                 {/* ── Header ── */}
                 <View style={[styles.header, { backgroundColor: colors.surface }]}>
@@ -193,17 +203,41 @@ const SocketDetailsModal: React.FC<SocketDetailsModalProps> = ({
                     </View>
                     {/* Live indicator dot */}
                     <View style={styles.liveIndicator}>
-                        <View style={[styles.liveDot, { backgroundColor: loadingSnap ? colors.outline : '#10B981' }]} />
+                        <View style={[styles.liveDot, { backgroundColor: isDeactivated ? colors.outline : (loadingSnap ? colors.outline : '#10B981') }]} />
                         <Text variant="labelSmall" style={{ color: colors.outline, marginLeft: 4 }}>
-                            {loadingSnap ? 'Loading' : 'Live'}
+                            {isDeactivated ? 'Inactive' : loadingSnap ? 'Loading' : 'Live'}
                         </Text>
                     </View>
+                    {/* Power toggle */}
+                    <TouchableOpacity onPress={onToggleDeactivated} style={[styles.closeButton, { marginRight: 4 }]}>
+                        <MaterialCommunityIcons
+                            name={isDeactivated ? 'power-off' : 'power'}
+                            size={22}
+                            color={isDeactivated ? colors.outline : colors.primary}
+                        />
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                         <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
                     </TouchableOpacity>
                 </View>
 
-                {loadingSnap && !snapshot ? (
+                {isDeactivated ? (
+                    <View style={styles.centerContent}>
+                        <MaterialCommunityIcons name="power-off" size={56} color={colors.outline} />
+                        <Text variant="titleMedium" style={{ color: colors.outline, marginTop: 16, fontWeight: '700' }}>
+                            Socket Deactivated
+                        </Text>
+                        <Text variant="bodySmall" style={{ color: colors.outline, marginTop: 8, textAlign: 'center', lineHeight: 20 }}>
+                            This socket is deactivated. Its data is no longer tracked or shown.
+                        </Text>
+                        <TouchableOpacity
+                            onPress={onToggleDeactivated}
+                            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                        >
+                            <Text variant="labelMedium" style={{ color: colors.onPrimary }}>Re-enable Socket</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : loadingSnap && !snapshot ? (
                     <View style={styles.centerContent}>
                         <ActivityIndicator size="large" color={colors.primary} />
                         <Text variant="bodyMedium" style={{ marginTop: 12, color: colors.outline }}>

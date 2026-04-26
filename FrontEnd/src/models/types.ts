@@ -34,6 +34,7 @@ export interface Device {
   position: { x: number; y: number };
   energyUsage?: number; // Watts, if smart_socket
   temperature?: number; // °C, if temperature_sensor
+  deactivated?: boolean; // if true, socket is ignored on the client side
 }
 
 export interface BlueprintFeature {

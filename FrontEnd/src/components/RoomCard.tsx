@@ -6,8 +6,10 @@ import { useTheme } from 'react-native-paper';
 
 import SparkLine from './SparkLine';
 import SocketDetailsModal from './SocketDetailsModal';
-import { fetchRoomBulkData, fetchRoomRealtime } from '../services/socketPredictionService';
+import { fetchRoomBulkData, fetchRoomRealtime, fetchSocketRealtime } from '../services/socketPredictionService';
+import { sendLocalAlert } from '../services/notifications';
 import type { Room, Device, DataPoint } from '../models/types';
+import { useRoomStore } from '../store/useRoomStore';
 
 interface Props {
   room: Room;
@@ -17,11 +19,22 @@ interface Props {
 const ANOMALY_COLOR = '#EF4444';
 const ENERGY_COLOR = '#F59E0B';
 
+const LABEL_COLORS: Record<string, string> = {
+  Low: '#10B981',
+  Normal: '#3B82F6',
+  High: '#F59E0B',
+  Wasteful: '#EF4444',
+};
+
 const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
+  const toggleSocketDeactivated = useRoomStore((s) => s.toggleSocketDeactivated);
+  const updateRoom = useRoomStore((s) => s.updateRoom);
+
   const [expanded, setExpanded] = useState(false);
   const [selectedSocket, setSelectedSocket] = useState<Device | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [socketKwhMap, setSocketKwhMap] = useState<Record<string, number>>({});
+  const [socketLabelMap, setSocketLabelMap] = useState<Record<string, string>>({});
   const [loadingKwh, setLoadingKwh] = useState(false);
   const [tempData, setTempData] = useState<DataPoint[]>([]);
   const [energyData, setEnergyData] = useState<DataPoint[]>([]);
@@ -45,10 +58,25 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
   const latestTemp = latestTempRaw != null ? Number(latestTempRaw).toFixed(2) : '—';
 
   const sockets = room.devices.filter((d) => d.type === 'smart_socket');
-  const totalKwh = Object.values(socketKwhMap).reduce((sum, kwh) => sum + kwh, 0);
+  // Only active sockets contribute to the power average
+  const totalKwh = sockets
+    .filter((s) => !s.deactivated)
+    .reduce((sum, s) => sum + (socketKwhMap[s.id] ?? 0), 0);
+
+  // Derive the live deactivated flag from the store (not from selectedSocket snapshot)
+  const isSelectedSocketDeactivated = selectedSocket
+    ? (room.devices.find((d) => d.id === selectedSocket.id)?.deactivated ?? false)
+    : false;
   const latestEnergy = loadingKwh ? '…' : (totalKwh * 1000).toFixed(0);
 
   const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tracks the last known label per socket so we only notify on transitions
+  const prevLabelMapRef = React.useRef<Record<string, string>>({});
+  // Tracks the last anomaly key to avoid unnecessary store updates
+  const lastAnomaliesKeyRef = React.useRef<string>('');
+  // Maps socketId -> expiry timestamp (ms). Alert stays visible until expiry even if label changes.
+  const alertExpiryRef = React.useRef<Record<string, number>>({});
+  const ALERT_TTL_MS = 60_000; // 60 seconds
 
   const loadData = useCallback(async () => {
     setLoadingKwh(true);
@@ -77,10 +105,62 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
 
   const pollRealtime = useCallback(async () => {
     try {
-      const tick = await fetchRoomRealtime(room.id);
+      const socketList = room.devices.filter((d) => d.type === 'smart_socket');
+      const [tick, ...labelResults] = await Promise.all([
+        fetchRoomRealtime(room.id),
+        ...socketList.map((s) => fetchSocketRealtime(s.id, room.id).catch(() => null)),
+      ]);
+
       const kwhMap: Record<string, number> = {};
       tick.sockets.forEach((s: any) => { kwhMap[s.socket_id] = s.kwh; });
       setSocketKwhMap(kwhMap);
+
+      const labelMap: Record<string, string> = {};
+      socketList.forEach((s, i) => {
+        const result = labelResults[i];
+        if (result?.predicted_label_name) labelMap[s.id] = result.predicted_label_name;
+      });
+      if (Object.keys(labelMap).length > 0) {
+        const alertLabels = new Set(['High', 'Wasteful']);
+        socketList.forEach((s) => {
+          const newLabel = labelMap[s.id];
+          if (!newLabel || !alertLabels.has(newLabel) || s.deactivated) return;
+          // Extend (or set) the TTL every time the socket is in an alert state
+          alertExpiryRef.current[s.id] = Date.now() + ALERT_TTL_MS;
+          // Fire a local notification only on first transition into this label
+          if (prevLabelMapRef.current[s.id] === newLabel) return;
+          const kwh = kwhMap[s.id] ?? 0;
+          sendLocalAlert(
+            `⚠ ${newLabel} Usage – ${room.name}`,
+            `Socket ${s.id} is drawing ${(kwh * 1000).toFixed(1)} W (${newLabel.toLowerCase()})`,
+          ).catch(() => {});
+        });
+
+        Object.assign(prevLabelMapRef.current, labelMap);
+        setSocketLabelMap((prev) => ({ ...prev, ...labelMap }));
+      }
+
+      // Derive room anomalies: currently High/Wasteful OR still within TTL window
+      const now = Date.now();
+      const alertSockets = socketList.filter((s) => {
+        if (s.deactivated) return false;
+        const label = prevLabelMapRef.current[s.id];
+        const isActiveAlert = label === 'High' || label === 'Wasteful';
+        const isSticky = (alertExpiryRef.current[s.id] ?? 0) > now;
+        return isActiveAlert || isSticky;
+      });
+      const newAnomalies = alertSockets.map((s) => {
+        const label = prevLabelMapRef.current[s.id];
+        const kwh = kwhMap[s.id] ?? 0;
+        // Show remaining TTL in seconds when the label has already cleared
+        const alertLabel = (label === 'High' || label === 'Wasteful') ? label : 'Resolved';
+        return `${s.id}: ${alertLabel} usage (${(kwh * 1000).toFixed(1)} W)`;
+      });
+      const anomalyKey = newAnomalies.join('|');
+      if (anomalyKey !== lastAnomaliesKeyRef.current) {
+        lastAnomaliesKeyRef.current = anomalyKey;
+        updateRoom({ ...room, analytics: { ...room.analytics, anomalies: newAnomalies } });
+      }
 
       const tickTime = new Date(tick.timestamp).getTime();
 
@@ -97,11 +177,11 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
     } catch (err) {
       // Silent catch
     }
-  }, [room.id]);
+  }, [room.id, room.devices, room.name, room.analytics, updateRoom]);
 
   useEffect(() => {
     loadData().then(() => {
-      pollTimerRef.current = setInterval(pollRealtime, 5000);
+      pollTimerRef.current = setInterval(pollRealtime, 2000);
     });
 
     return () => {
@@ -203,15 +283,37 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
                       <TouchableOpacity
                         key={socket.id}
                         onPress={() => handleSocketPress(socket)}
-                        style={[styles.socketCard, { backgroundColor: colors.surfaceVariant }]}
+                        style={[
+                          styles.socketCard,
+                          {
+                            backgroundColor: !socket.deactivated && socketLabelMap[socket.id]
+                              ? LABEL_COLORS[socketLabelMap[socket.id]] + '22'
+                              : colors.surfaceVariant,
+                            borderWidth: !socket.deactivated && socketLabelMap[socket.id] ? 1 : 0,
+                            borderColor: !socket.deactivated && socketLabelMap[socket.id]
+                              ? LABEL_COLORS[socketLabelMap[socket.id]] + '66'
+                              : 'transparent',
+                          },
+                          socket.deactivated && { opacity: 0.45 },
+                        ]}
                         activeOpacity={0.7}
                       >
-                        <MaterialCommunityIcons name="power-socket-eu" size={24} color={colors.primary} />
+                        <MaterialCommunityIcons
+                          name={socket.deactivated ? 'power-off' : 'power-socket-eu'}
+                          size={20}
+                          color={
+                            socket.deactivated
+                              ? colors.outline
+                              : (socketLabelMap[socket.id]
+                                  ? LABEL_COLORS[socketLabelMap[socket.id]]
+                                  : colors.primary)
+                          }
+                        />
                         <Text variant="bodySmall" style={{ fontWeight: '600', color: colors.onSurface, marginTop: 6, textAlign: 'center' }}>
                           {socket.id}
                         </Text>
                         <Text variant="labelSmall" style={{ color: colors.outline, marginTop: 2 }}>
-                          {(getSocketKwh(socket.id) * 1000).toFixed(1)} W
+                          {socket.deactivated ? 'Deactivated' : `${(getSocketKwh(socket.id) * 1000).toFixed(1)} W`}
                         </Text>
                         <MaterialCommunityIcons name="chevron-right" size={18} color={colors.outline} style={styles.socketArrow} />
                       </TouchableOpacity>
@@ -243,6 +345,10 @@ const RoomCard: React.FC<Props> = ({ room, refreshKey = 0 }) => {
         visible={modalVisible}
         socket={selectedSocket}
         roomId={room.id}
+        isDeactivated={isSelectedSocketDeactivated}
+        onToggleDeactivated={() =>
+          selectedSocket && toggleSocketDeactivated(room.id, selectedSocket.id)
+        }
         onClose={() => { setModalVisible(false); setSelectedSocket(null); }}
       />
     </>
@@ -264,7 +370,7 @@ const styles = StyleSheet.create({
   chartBlock: { flex: 1, gap: 4 },
   section: { marginTop: 12 },
   socketsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  socketCard: { flex: 1, minWidth: '45%', paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, alignItems: 'center', position: 'relative' },
+  socketCard: { flex: 1, minWidth: '25%', paddingHorizontal: 6, paddingVertical: 6, borderRadius: 12, alignItems: 'center', position: 'relative' },
   socketArrow: { position: 'absolute', top: 8, right: 8 },
   chip: { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 6 },
 });

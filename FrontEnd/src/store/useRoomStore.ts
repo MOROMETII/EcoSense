@@ -48,6 +48,7 @@ interface RoomStore {
   addRoom: (room: Room) => void;
   updateRoom: (room: Room) => void;
   deleteRoom: (id: string) => void;
+  toggleSocketDeactivated: (roomId: string, socketId: string) => void;
 }
 
 export const useRoomStore = create<RoomStore>((set) => ({
@@ -57,4 +58,17 @@ export const useRoomStore = create<RoomStore>((set) => ({
     set((s) => ({ rooms: s.rooms.map((r) => (r.id === room.id ? room : r)) })),
   deleteRoom: (id) =>
     set((s) => ({ rooms: s.rooms.filter((r) => r.id !== id) })),
+  toggleSocketDeactivated: (roomId, socketId) =>
+    set((s) => ({
+      rooms: s.rooms.map((r) =>
+        r.id !== roomId
+          ? r
+          : {
+              ...r,
+              devices: r.devices.map((d) =>
+                d.id !== socketId ? d : { ...d, deactivated: !d.deactivated },
+              ),
+            },
+      ),
+    })),
 }));
