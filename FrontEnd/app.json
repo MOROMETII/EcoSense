@@ -19,6 +19,7 @@
       }
     },
     "android": {
+      "package": "com.yourcompany.frontend",  // ← ADD THIS LINE
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
