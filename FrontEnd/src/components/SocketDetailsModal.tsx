@@ -34,7 +34,7 @@ const LABEL_COLORS: Record<string, string> = {
 };
 
 // How often to poll /predict/realtime while the modal is open (ms)
-const POLL_INTERVAL_MS = 5_000;
+const POLL_INTERVAL_MS = 15_000;
 
 function fmt(value: unknown, decimals: number): string {
     const n = Number(value);

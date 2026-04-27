@@ -41,7 +41,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(false);
 
     if (result.ok) {
-      login('server-token', { name: username.trim(), email: email.trim() });
+      login(result.token ?? username.trim(), { name: username.trim(), email: email.trim() });
     } else {
       setErrorMsg(result.message ?? 'Registration failed.');
     }

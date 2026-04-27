@@ -30,6 +30,7 @@ export interface SocketPrediction {
 
 export interface Device {
   id: string;
+  serverId?: number;   // numeric DB id — needed for PATCH/DELETE API calls
   type: 'smart_socket' | 'temperature_sensor';
   position: { x: number; y: number };
   energyUsage?: number; // Watts, if smart_socket

@@ -31,8 +31,8 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     const result = await loginApi(username.trim(), password);
     setLoading(false);
     if (result.ok) {
-      // Server confirmed — persist session
-      login('server-token', { name: username.trim() });
+      // Server confirmed — persist session with the returned token
+      login(result.token ?? username.trim(), { name: username.trim() });
     } else {
       setErrorMsg(result.message ?? 'Login failed.');
     }

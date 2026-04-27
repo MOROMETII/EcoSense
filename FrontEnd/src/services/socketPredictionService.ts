@@ -1,6 +1,5 @@
 import type { SocketPrediction } from "../models/types";
-
-const BASE_URL = "https://botryose-unshadily-wynell.ngrok-free.dev";
+import { BASE_URL } from "./aiService";
 
 export async function fetchSocketHistory(socketId: string, roomId: string) {
   const url = `${BASE_URL}/socket-history/${encodeURIComponent(socketId)}?room_id=${encodeURIComponent(roomId)}&hours=24`;

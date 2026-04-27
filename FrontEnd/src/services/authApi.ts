@@ -1,9 +1,10 @@
-const BASE_URL    = 'https://botryose-unshadily-wynell.ngrok-free.dev';
+import { BASE_URL } from "./aiService";
 const TIMEOUT_MS  = 8000;
 
 export interface ApiResult {
   ok: boolean;
   message?: string;
+  token?: string;  // session token returned by the server on successful login/register
 }
 
 // Uses AbortController so the timeout cleans up properly.
@@ -23,7 +24,12 @@ export async function loginApi(username: string, password: string): Promise<ApiR
       headers: { 'ngrok-skip-browser-warning': 'true' },
     });
     clear();
-    if (res.status === 200) return { ok: true };
+    if (res.status === 200) {
+      const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+      // Try common JWT field names; fall back to username for servers that return {status:"Success"}
+      const jwt = body.token ?? body.access_token ?? body.jwt ?? username;
+      return { ok: true, token: String(jwt) };
+    }
     const body = await res.json().catch(() => ({})) as Record<string, unknown>;
     return { ok: false, message: String(body.error ?? `Server error (${res.status})`) };
   } catch (e: unknown) {
@@ -37,7 +43,7 @@ export async function loginApi(username: string, password: string): Promise<ApiR
 
 export async function registerApi(username: string, password: string, email: string): Promise<ApiResult> {
   const { controller, clear } = makeController();
-  const payload = {"username": username,"mail": email,"password": password };
+  const payload = { "username": username, "mail": email, "password": password };
   try {
     const res = await fetch(`${BASE_URL}/register`, {
       method: 'POST',
@@ -49,7 +55,11 @@ export async function registerApi(username: string, password: string, email: str
       body: JSON.stringify(payload),
     });
     clear();
-    if (res.status === 200) return { ok: true };
+    if (res.status === 200) {
+      const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+      const jwt = body.token ?? body.access_token ?? body.jwt ?? username;
+      return { ok: true, token: String(jwt) };
+    }
     const body = await res.json().catch(() => ({})) as Record<string, unknown>;
     return { ok: false, message: String(body.error ?? `Server error (${res.status})`) };
   } catch (e: unknown) {
@@ -61,11 +71,9 @@ export async function registerApi(username: string, password: string, email: str
   }
 }
 
-
-
-export async function logoutApi(username: string, deviceName: string, token: string): Promise<ApiResult> {
+export async function logoutApi(username: string, token: string): Promise<ApiResult> {
   const { controller, clear } = makeController();
-  const payload = { "username":username, "deviceName":deviceName, "token":token };
+  const payload = { "token": token, "username": username };
   try {
     const res = await fetch(`${BASE_URL}/logout`, {
       method: 'POST',
@@ -85,3 +93,4 @@ export async function logoutApi(username: string, deviceName: string, token: str
     return { ok: false, message: 'Server is unreachable. Please try again later.' };
   }
 }
+

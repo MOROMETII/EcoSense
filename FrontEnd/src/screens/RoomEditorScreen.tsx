@@ -15,6 +15,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import ScreenWrapper from '../components/ScreenWrapper';
 import BlueprintBackground from '../components/BlueprintBackground';
 import { useRoomStore } from '../store/useRoomStore';
+import { useAuth } from '../context/AuthContext';
+import { getOrCreateDefaultFloor, pushNewRoom } from '../services/roomsApi';
 import type { Device, BlueprintData, BlueprintFeature } from '../models/types';
 import type { RoomsStackParamList } from '../navigation/RoomsNavigator';
 
@@ -267,6 +269,7 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
   const rooms      = useRoomStore((s) => s.rooms);
   const addRoom    = useRoomStore((s) => s.addRoom);
   const updateRoom = useRoomStore((s) => s.updateRoom);
+  const { user }   = useAuth();
 
   const existingRoom = roomId ? rooms.find((r) => r.id === roomId) : undefined;
 
@@ -276,6 +279,7 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
   const [devices, setDevices]                         = useState<Device[]>(existingRoom?.devices ?? []);
   const [selectedDeviceType, setSelectedDeviceType]   = useState<DeviceType>('smart_socket');
   const [roomName, setRoomName]                       = useState(existingRoom?.name ?? '');
+  const [saving, setSaving]                           = useState(false);
 
   const blueprint: BlueprintData = { features };
 
@@ -331,23 +335,29 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
     setDevices((prev) => [...prev, newDevice]);
   };
 
-  // ── Save ──────────────────────────────────────────────────────────────────
-
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = roomName.trim();
     if (!name) { Alert.alert('Name Required', 'Please enter a room name.'); return; }
-    if (existingRoom) {
-      updateRoom({ ...existingRoom, name, devices, blueprint });
-    } else {
-      addRoom({
-        id: String(Date.now()),
-        name,
-        devices,
-        blueprint,
-        analytics: { temperature: [], energyUsage: [], aiSuggestions: [], anomalies: [] },
-      });
+
+    setSaving(true);
+    try {
+      if (existingRoom) {
+        // Edit: update local store only (device/feature changes require delete+recreate on server)
+        updateRoom({ ...existingRoom, name, devices, blueprint });
+      } else {
+        // Create: push to server, then insert the returned room into the store
+        const token = user?.token ?? '';
+        const floorId = await getOrCreateDefaultFloor(token);
+        const newRoom = await pushNewRoom(floorId, name, devices, features, token);
+        addRoom(newRoom);
+      }
+      navigation.goBack();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Save Failed', `Could not save room to server.\n\n${msg}`);
+    } finally {
+      setSaving(false);
     }
-    navigation.goBack();
   };
 
   // ── Render: layout ────────────────────────────────────────────────────────
@@ -589,8 +599,8 @@ const RoomEditorScreen: React.FC<Props> = ({ navigation, route }) => {
         </View>
 
         <View style={styles.btnRow}>
-          <Button mode="outlined" style={styles.btnHalf} onPress={() => setStep('devices')}>Back</Button>
-          <Button mode="contained" style={styles.btnHalf} onPress={handleSave}>
+          <Button mode="outlined" style={styles.btnHalf} onPress={() => setStep('devices')} disabled={saving}>Back</Button>
+          <Button mode="contained" style={styles.btnHalf} onPress={handleSave} loading={saving} disabled={saving}>
             {existingRoom ? 'Update Room' : 'Save Room'}
           </Button>
         </View>

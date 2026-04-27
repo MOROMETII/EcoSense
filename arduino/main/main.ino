@@ -1,27 +1,29 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecureBearSSL.h>
 #include <DHT.h>
+#include <time.h>
 
 // ---------------- WIFI ----------------
-const char* ssid = "YOUR_WIFI";
-const char* password = "YOUR_PASSWORD";
+const char* ssid = "Luca’s iPhone";
+const char* password = "64916492";
 
-// ---------------- BACKEND ----------------
-const char* postUrl = "https://c615-109-166-136-76.ngrok-free.app/data/thermostat";
+// ---------------- BACKEND (HTTPS) ----------------
+const char* postUrl =
+"https://linked-towns-pioneer-established.trycloudflare.com/data/thermostat";
 
-// status endpoint with ID = 1
-String statusUrl = "https://c615-109-166-136-76.ngrok-free.app/thermostat/1/status";
+const char* statusUrl =
+"https://linked-towns-pioneer-established.trycloudflare.com/thermostat/2/status";
 
 // ---------------- DHT ----------------
-#define DHTPIN D5
+#define DHTPIN 14
 #define DHTTYPE DHT11
 
 DHT dht(DHTPIN, DHTTYPE);
 
 // ---------------- LED ----------------
-#define LED_PIN D6
+#define LED_PIN 12
 
 bool deviceOnline = true;
 
@@ -34,23 +36,60 @@ const unsigned long checkInterval = 5000;
 
 // ---------------- WIFI ----------------
 void connectWiFi() {
+
+  Serial.println("\nConnecting WiFi...");
+
+  WiFi.persistent(false);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
+  delay(1000);
+
   WiFi.begin(ssid, password);
 
-  Serial.print("Connecting");
+  unsigned long start = millis();
 
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
     delay(500);
     Serial.print(".");
   }
 
-  Serial.println("\nConnected!");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    delay(1000);
+  } else {
+    Serial.println("\nWiFi FAILED");
+  }
+}
+
+// ---------------- NTP TIME SYNC ----------------
+void syncTime() {
+
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+  Serial.print("Syncing time");
+
+  unsigned long start = millis();
+  time_t now = time(nullptr);
+
+  while (now < 8 * 3600 * 2 && millis() - start < 10000) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+
+  if (now < 8 * 3600 * 2) {
+    Serial.println("\nTime sync FAILED — continuing anyway");
+  } else {
+    Serial.println("\nTime synced: " + String(ctime(&now)));
+  }
 }
 
 // ---------------- SEND SENSOR DATA ----------------
 void sendData() {
 
-  if (!deviceOnline) return; // STOP SENDING IF OFFLINE
+  if (WiFi.status() != WL_CONNECTED) return;
 
   float temp = dht.readTemperature();
   float hum  = dht.readHumidity();
@@ -60,23 +99,38 @@ void sendData() {
     return;
   }
 
-  WiFiClient client;
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 512);
+
   HTTPClient http;
 
-  http.begin(client, postUrl);
+  http.setTimeout(15000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  if (!http.begin(client, postUrl)) {
+    Serial.println("HTTP begin failed (POST)");
+    return;
+  }
+
   http.addHeader("Content-Type", "application/json");
 
-  String json =
-    "{"
-    "\"thermostat_id\":1,"
-    "\"temp_ambient\":" + String(temp, 2) + ","
-    "\"humidity\":" + String(hum, 2) +
-    "}";
+  String json = "{";
+  json += "\"thermostat_id\":2,";
+  json += "\"temp_ambient\":" + String(temp, 2) + ",";
+  json += "\"humidity\":" + String(hum, 2);
+  json += "}";
 
   int code = http.POST(json);
 
-  Serial.print("POST: ");
+  Serial.print("POST code: ");
   Serial.println(code);
+
+  if (code < 0) {
+    Serial.print("POST error: ");
+    Serial.println(http.errorToString(code));
+  }
 
   http.end();
 }
@@ -84,26 +138,44 @@ void sendData() {
 // ---------------- CHECK STATUS ----------------
 void checkStatus() {
 
-  WiFiClient client;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 512);
+
   HTTPClient http;
 
-  http.begin(client, statusUrl);
+  http.setTimeout(15000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  if (!http.begin(client, statusUrl)) {
+    Serial.println("HTTP begin failed (GET)");
+    return;
+  }
 
   int code = http.GET();
+
+  Serial.print("GET code: ");
+  Serial.println(code);
 
   if (code == 200) {
 
     String payload = http.getString();
-    Serial.print("Status: ");
-    Serial.println(payload);
+    payload.trim();
 
-    // SIMPLE PARSING
-    if (payload.indexOf("false") != -1) {
-      deviceOnline = false;
+    Serial.println("Status: " + payload);
+
+    if (payload.length() == 0) {
+      Serial.println("Empty payload — retaining current status");
     } else {
-      deviceOnline = true;
+      deviceOnline = (payload.indexOf("0") == -1);
     }
 
+  } else {
+    Serial.print("GET error: ");
+    Serial.println(http.errorToString(code));
   }
 
   http.end();
@@ -120,21 +192,25 @@ void setup() {
   dht.begin();
 
   connectWiFi();
+  syncTime();
 }
 
 // ---------------- LOOP ----------------
 void loop() {
 
-  // LED reflects online state
   digitalWrite(LED_PIN, deviceOnline ? HIGH : LOW);
 
-  // check backend status every 5 sec
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+    syncTime();
+    return;
+  }
+
   if (millis() - lastCheck >= checkInterval) {
     lastCheck = millis();
     checkStatus();
   }
 
-  // send data every 15 sec (only if online)
   if (millis() - lastSend >= sendInterval) {
     lastSend = millis();
     sendData();
